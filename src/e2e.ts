@@ -18,7 +18,7 @@ if (!monorepoDir) {
 
 const contractsDir = path.join(monorepoDir, "contracts");
 const cliDir = path.join(monorepoDir, "cli");
-const dappExampleDir = path.join(monorepoDir, "dapp-examples", "uniswap-v2-example");
+const dappExampleDir = path.join(monorepoDir, "dapp-examples", "uniswap-v2");
 const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
 const anvilPort = process.env.ANVIL_PORT ?? "8546";
