@@ -8,6 +8,7 @@
     "typecheck": "bun run tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@vibefi/shared": "workspace:*",
     "dotenv": "^16.4.5",
     "viem": "^2.45.1"
   },

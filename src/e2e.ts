@@ -2,8 +2,14 @@ import "dotenv/config";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createPublicClient, createWalletClient, decodeEventLog, http, type Hex } from "viem";
+import { createWalletClient, decodeEventLog, http, type Hex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
+import { getPublicClient, loadDevnetJson, governorAbi, type DevnetJson } from "@vibefi/shared";
+
+type AnvilClient = ReturnType<typeof getPublicClient> & {
+  request(args: { method: "anvil_mine"; params: [number] }): Promise<void>;
+  request(args: { method: "evm_increaseTime"; params: [string] }): Promise<void>;
+};
 
 const monorepoDir = process.env.MONOREPO_DIR;
 if (!monorepoDir) {
@@ -13,7 +19,7 @@ if (!monorepoDir) {
 const contractsDir = path.join(monorepoDir, "contracts");
 const cliDir = path.join(monorepoDir, "cli");
 const dappExampleDir = path.join(monorepoDir, "dapp-examples", "uniswap-v2-example");
-const devnetJson = path.join(contractsDir, ".devnet", "devnet.json");
+const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
 const anvilPort = process.env.ANVIL_PORT ?? "8546";
 const rpcUrl = `http://127.0.0.1:${anvilPort}`;
@@ -21,11 +27,7 @@ const ipfsApi = process.env.IPFS_API ?? "http://127.0.0.1:5001";
 const ipfsGateway = process.env.IPFS_GATEWAY ?? "http://127.0.0.1:8080";
 const forkUrl = process.env.MAINNET_FORK_URL ?? "";
 
-const publicClient = createPublicClient({ transport: http(rpcUrl) });
-
-type DevnetConfig = {
-  vfiGovernor: string;
-};
+const publicClient = getPublicClient(rpcUrl) as AnvilClient;
 
 const startTime = Date.now();
 function logSection(title: string) {
@@ -66,48 +68,41 @@ function runCmd(
   });
 }
 
-async function waitForRpc(timeoutMs: number) {
+function runCli(
+  args: string[],
+  options: { noRpc?: boolean } = {}
+) {
+  const fullArgs = ["run", "src/index.ts", ...args];
+  if (!options.noRpc) {
+    fullArgs.push("--rpc", rpcUrl, "--devnet", devnetJsonPath);
+  }
+  fullArgs.push("--json");
+  return runCmd("bun", fullArgs, { cwd: cliDir, capture: true });
+}
+
+async function waitFor(
+  label: string,
+  probe: () => Promise<boolean>,
+  timeoutMs: number
+): Promise<boolean> {
   const start = Date.now();
-  let attempts = 0;
   while (Date.now() - start < timeoutMs) {
     try {
-      attempts++;
-      const chainId = await publicClient.getChainId();
-      console.log(`RPC responded with chainId=${chainId} after ${attempts} attempts`);
-      return true;
+      if (await probe()) return true;
     } catch {
       // ignore
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  console.log(`RPC not ready after ${attempts} attempts (${timeoutMs}ms timeout)`);
+  console.log(`${label} not ready after ${timeoutMs}ms timeout`);
   return false;
-}
-
-async function waitForIpfs(timeoutMs: number) {
-  const start = Date.now();
-  const url = new URL("/api/v0/version", ipfsApi);
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url.toString(), { method: "POST" });
-      if (res.ok) return true;
-    } catch {
-      // ignore
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return false;
-}
-
-async function getCode(address: string): Promise<string> {
-  return publicClient.getBytecode({ address: address as Hex }).then((code) => code ?? "0x");
 }
 
 async function ensureContractsDeployed() {
-  if (!fs.existsSync(devnetJson)) return false;
-  const devnet = JSON.parse(fs.readFileSync(devnetJson, "utf-8")) as DevnetConfig;
-  const code = await getCode(devnet.vfiGovernor);
-  return code !== "0x";
+  const devnet = loadDevnetJson(devnetJsonPath);
+  if (!devnet) return false;
+  const code = await publicClient.getBytecode({ address: devnet.vfiGovernor as Hex });
+  return (code ?? "0x") !== "0x";
 }
 
 async function main() {
@@ -118,7 +113,8 @@ async function main() {
 
   logSection("Start devnet");
   console.log(`Checking if anvil is already running on :${anvilPort}...`);
-  if (await waitForRpc(2000)) {
+  const alreadyRunning = await waitFor("RPC", () => publicClient.getChainId().then(() => true), 2000);
+  if (alreadyRunning) {
     console.log(`Anvil already running on :${anvilPort}, killing...`);
     await runCmd(
       "bash",
@@ -131,7 +127,7 @@ async function main() {
   }
 
   console.log("Removing stale devnet.json...");
-  fs.rmSync(devnetJson, { force: true });
+  fs.rmSync(devnetJsonPath, { force: true });
 
   console.log("Starting local-devnet.sh (forking mainnet if configured)...");
   spawn("./script/local-devnet.sh", [], {
@@ -141,7 +137,11 @@ async function main() {
   }).unref();
 
   console.log(`Waiting for RPC at ${rpcUrl}...`);
-  const rpcReady = await waitForRpc(30000);
+  const rpcReady = await waitFor("RPC", async () => {
+    const chainId = await publicClient.getChainId();
+    console.log(`RPC responded with chainId=${chainId}`);
+    return true;
+  }, 30000);
   if (!rpcReady) {
     throw new Error(`RPC not ready at ${rpcUrl}`);
   }
@@ -149,7 +149,10 @@ async function main() {
 
   logSection("Check IPFS");
   console.log(`Checking IPFS at ${ipfsApi}...`);
-  const ipfsReady = await waitForIpfs(8000);
+  const ipfsReady = await waitFor("IPFS", async () => {
+    const res = await fetch(new URL("/api/v0/version", ipfsApi).toString(), { method: "POST" });
+    return res.ok;
+  }, 8000);
   if (!ipfsReady) {
     throw new Error(`IPFS not ready at ${ipfsApi}.`);
   }
@@ -186,6 +189,7 @@ async function main() {
   logSection("Send sanity tx via viem");
   console.log("Sending sanity transaction...");
   const sanityTxHash = await walletClient.sendTransaction({
+    chain: null,
     to: devAccount.address,
     value: 0n
   });
@@ -195,41 +199,19 @@ async function main() {
 
   logSection("CLI status");
   console.log("Running: vibefi status...");
-  let result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "status", "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  let result = await runCli(["status"]);
   if (result.code !== 0) throw new Error("status failed");
 
   logSection("List proposals");
   console.log("Running: vibefi proposals:list...");
-  result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "proposals:list", "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli(["proposals:list"]);
   if (result.code !== 0) throw new Error("proposals:list failed");
 
   logSection("Package dapp");
   console.log(`Running: vibefi package (${dappExampleDir})...`);
-  result = await runCmd(
-    "bun",
-    [
-      "run",
-      "src/index.ts",
-      "package",
-      "--path",
-      dappExampleDir,
-      "--name",
-      "Uniswap V2",
-      "--dapp-version",
-      "0.0.1",
-      "--description",
-      "Uniswap V2 example",
-      "--json"
-    ],
-    { cwd: cliDir, capture: true }
+  result = await runCli(
+    ["package", "--path", dappExampleDir, "--name", "Uniswap V2", "--dapp-version", "0.0.1", "--description", "Uniswap V2 example"],
+    { noRpc: true }
   );
   if (result.code !== 0) throw new Error("package failed");
   const packageJson = JSON.parse(result.stdout || "{}") as { rootCid?: string };
@@ -238,30 +220,14 @@ async function main() {
   logSection("Propose dapp");
   const proposalDescription = `E2E proposal ${Date.now()}`;
   console.log(`Running: vibefi dapp:propose (rootCid=${packageJson.rootCid})...`);
-  result = await runCmd(
-    "bun",
-    [
-      "run",
-      "src/index.ts",
-      "dapp:propose",
-      "--rpc",
-      rpcUrl,
-      "--devnet",
-      devnetJson,
-      "--root-cid",
-      packageJson.rootCid,
-      "--name",
-      "Uniswap V2",
-      "--dapp-version",
-      "0.0.1",
-      "--description",
-      "Uniswap V2 example",
-      "--proposal-description",
-      proposalDescription,
-      "--json"
-    ],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli([
+    "dapp:propose",
+    "--root-cid", packageJson.rootCid,
+    "--name", "Uniswap V2",
+    "--dapp-version", "0.0.1",
+    "--description", "Uniswap V2 example",
+    "--proposal-description", proposalDescription
+  ]);
   if (result.code !== 0) throw new Error("dapp:propose failed");
   const proposeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
   if (!proposeJson.txHash) throw new Error("Missing txHash from dapp:propose");
@@ -273,7 +239,7 @@ async function main() {
 
   logSection("Fetch proposal id");
   console.log("Reading devnet config...");
-  const devnet = JSON.parse(fs.readFileSync(devnetJson, "utf-8")) as DevnetConfig;
+  const devnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
   console.log(`Waiting for tx receipt: ${proposeJson.txHash}...`);
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: proposeJson.txHash as Hex,
@@ -283,24 +249,17 @@ async function main() {
   const governorAddress = devnet.vfiGovernor.toLowerCase();
   const proposalLog = (receipt.logs ?? []).find((log) => log.address.toLowerCase() === governorAddress);
   if (!proposalLog) throw new Error("ProposalCreated log not found in receipt");
-  const governorAbi = JSON.parse(
-    fs.readFileSync(path.join(cliDir, "src", "abis", "VfiGovernor.json"), "utf-8")
-  );
   const decoded = decodeEventLog({
     abi: governorAbi,
     data: proposalLog.data as Hex,
-    topics: proposalLog.topics as Hex[]
+    topics: proposalLog.topics as [Hex, ...Hex[]]
   });
-  const proposalId = (decoded.args as { proposalId: bigint }).proposalId.toString();
+  const proposalId = ((decoded as unknown as { args: { proposalId: bigint } }).args).proposalId.toString();
   console.log(`Using proposalId=${proposalId}`);
 
   logSection("Cast vote");
   console.log(`Running: vibefi vote:cast ${proposalId} --support for...`);
-  result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "vote:cast", proposalId, "--support", "for", "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli(["vote:cast", proposalId, "--support", "for"]);
   if (result.code !== 0) throw new Error("vote:cast failed");
   console.log("Vote cast.");
 
@@ -311,47 +270,32 @@ async function main() {
 
   logSection("Vote status");
   console.log(`Running: vibefi vote:status ${proposalId}...`);
-  result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "vote:status", proposalId, "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli(["vote:status", proposalId]);
   if (result.code !== 0) throw new Error("vote:status failed");
 
   logSection("Queue proposal");
   console.log(`Running: vibefi proposals:queue ${proposalId}...`);
-  result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "proposals:queue", proposalId, "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli(["proposals:queue", proposalId]);
   if (result.code !== 0) throw new Error("proposals:queue failed");
   const queueJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
   if (!queueJson.txHash) throw new Error("Missing txHash from proposals:queue");
 
-  logSection("Mine block for timelock");
-  console.log("Mining 1 block for timelock...");
+  logSection("Advance time past timelock delay");
+  console.log("Increasing time by 2s and mining 1 block...");
+  await publicClient.request({ method: "evm_increaseTime", params: ["0x2"] });
   await publicClient.request({ method: "anvil_mine", params: [1] });
   console.log("Block mined.");
 
   logSection("Execute proposal");
   console.log(`Running: vibefi proposals:execute ${proposalId}...`);
-  result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "proposals:execute", proposalId, "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli(["proposals:execute", proposalId]);
   if (result.code !== 0) throw new Error("proposals:execute failed");
   const executeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
   if (!executeJson.txHash) throw new Error("Missing txHash from proposals:execute");
 
   logSection("Dapp list");
   console.log("Running: vibefi dapp:list...");
-  result = await runCmd(
-    "bun",
-    ["run", "src/index.ts", "dapp:list", "--rpc", rpcUrl, "--devnet", devnetJson, "--json"],
-    { cwd: cliDir, capture: true }
-  );
+  result = await runCli(["dapp:list"]);
   if (result.code !== 0) throw new Error("dapp:list failed");
   const dappList = JSON.parse(result.stdout || "[]") as Array<{ rootCid?: string }>;
   const latest = dappList[dappList.length - 1];
@@ -360,23 +304,15 @@ async function main() {
 
   logSection("Fetch dapp bundle");
   console.log(`Running: vibefi dapp:fetch --root-cid ${latest.rootCid}...`);
-  result = await runCmd(
-    "bun",
+  result = await runCli(
     [
-      "run",
-      "src/index.ts",
       "dapp:fetch",
-      "--root-cid",
-      latest.rootCid,
-      "--out",
-      path.join(cliDir, ".vibefi", "cache", latest.rootCid),
-      "--ipfs-api",
-      ipfsApi,
-      "--ipfs-gateway",
-      ipfsGateway,
-      "--json"
+      "--root-cid", latest.rootCid,
+      "--out", path.join(cliDir, ".vibefi", "cache", latest.rootCid),
+      "--ipfs-api", ipfsApi,
+      "--ipfs-gateway", ipfsGateway
     ],
-    { cwd: cliDir, capture: true }
+    { noRpc: true }
   );
   if (result.code !== 0) throw new Error("dapp:fetch failed");
   console.log("Dapp bundle fetched and verified.");
