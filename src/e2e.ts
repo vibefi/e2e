@@ -18,7 +18,10 @@ if (!monorepoDir) {
 
 const contractsDir = path.join(monorepoDir, "contracts");
 const cliDir = path.join(monorepoDir, "cli");
-const dappExampleDir = path.join(monorepoDir, "dapp-examples", "uniswap-v2");
+const dappExamples = [
+  { dir: path.join(monorepoDir, "dapp-examples", "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
+  { dir: path.join(monorepoDir, "dapp-examples", "aave-v3"), name: "Aave V3", description: "Aave V3 example" }
+];
 const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
 const anvilPort = process.env.ANVIL_PORT ?? "8546";
@@ -207,115 +210,116 @@ async function main() {
   result = await runCli(["proposals:list"]);
   if (result.code !== 0) throw new Error("proposals:list failed");
 
-  logSection("Package dapp");
-  console.log(`Running: vibefi package (${dappExampleDir})...`);
-  result = await runCli(
-    ["package", "--path", dappExampleDir, "--name", "Uniswap V2", "--dapp-version", "0.0.1", "--description", "Uniswap V2 example"],
-    { noRpc: true }
-  );
-  if (result.code !== 0) throw new Error("package failed");
-  const packageJson = JSON.parse(result.stdout || "{}") as { rootCid?: string };
-  if (!packageJson.rootCid) throw new Error("Missing rootCid from package");
-
-  logSection("Propose dapp");
-  const proposalDescription = `E2E proposal ${Date.now()}`;
-  console.log(`Running: vibefi dapp:propose (rootCid=${packageJson.rootCid})...`);
-  result = await runCli([
-    "dapp:propose",
-    "--root-cid", packageJson.rootCid,
-    "--name", "Uniswap V2",
-    "--dapp-version", "0.0.1",
-    "--description", "Uniswap V2 example",
-    "--proposal-description", proposalDescription
-  ]);
-  if (result.code !== 0) throw new Error("dapp:propose failed");
-  const proposeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
-  if (!proposeJson.txHash) throw new Error("Missing txHash from dapp:propose");
-
-  logSection("Mine block");
-  console.log("Mining 1 block...");
-  await publicClient.request({ method: "anvil_mine", params: [1] });
-  console.log("Block mined.");
-
-  logSection("Fetch proposal id");
-  console.log("Reading devnet config...");
   const devnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
-  console.log(`Waiting for tx receipt: ${proposeJson.txHash}...`);
-  const receipt = await publicClient.waitForTransactionReceipt({
-    hash: proposeJson.txHash as Hex,
-    timeout: 15000
-  });
-  console.log("Receipt received.");
-  const governorAddress = devnet.vfiGovernor.toLowerCase();
-  const proposalLog = (receipt.logs ?? []).find((log) => log.address.toLowerCase() === governorAddress);
-  if (!proposalLog) throw new Error("ProposalCreated log not found in receipt");
-  const decoded = decodeEventLog({
-    abi: governorAbi,
-    data: proposalLog.data as Hex,
-    topics: proposalLog.topics as [Hex, ...Hex[]]
-  });
-  const proposalId = ((decoded as unknown as { args: { proposalId: bigint } }).args).proposalId.toString();
-  console.log(`Using proposalId=${proposalId}`);
 
-  logSection("Cast vote");
-  console.log(`Running: vibefi vote:cast ${proposalId} --support for...`);
-  result = await runCli(["vote:cast", proposalId, "--support", "for"]);
-  if (result.code !== 0) throw new Error("vote:cast failed");
-  console.log("Vote cast.");
+  for (const dapp of dappExamples) {
+    logSection(`Package dapp: ${dapp.name}`);
+    console.log(`Running: vibefi package (${dapp.dir})...`);
+    result = await runCli(
+      ["package", "--path", dapp.dir, "--name", dapp.name, "--dapp-version", "0.0.1", "--description", dapp.description],
+      { noRpc: true }
+    );
+    if (result.code !== 0) throw new Error(`package failed for ${dapp.name}`);
+    const packageJson = JSON.parse(result.stdout || "{}") as { rootCid?: string };
+    if (!packageJson.rootCid) throw new Error(`Missing rootCid from package for ${dapp.name}`);
 
-  logSection("Mine blocks for voting period");
-  console.log("Mining 25 blocks for voting period...");
-  await publicClient.request({ method: "anvil_mine", params: [25] });
-  console.log("Blocks mined.");
+    logSection(`Propose dapp: ${dapp.name}`);
+    const proposalDescription = `E2E proposal ${dapp.name} ${Date.now()}`;
+    console.log(`Running: vibefi dapp:propose (rootCid=${packageJson.rootCid})...`);
+    result = await runCli([
+      "dapp:propose",
+      "--root-cid", packageJson.rootCid,
+      "--name", dapp.name,
+      "--dapp-version", "0.0.1",
+      "--description", dapp.description,
+      "--proposal-description", proposalDescription
+    ]);
+    if (result.code !== 0) throw new Error(`dapp:propose failed for ${dapp.name}`);
+    const proposeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
+    if (!proposeJson.txHash) throw new Error(`Missing txHash from dapp:propose for ${dapp.name}`);
 
-  logSection("Vote status");
-  console.log(`Running: vibefi vote:status ${proposalId}...`);
-  result = await runCli(["vote:status", proposalId]);
-  if (result.code !== 0) throw new Error("vote:status failed");
+    logSection(`Mine block: ${dapp.name}`);
+    console.log("Mining 1 block...");
+    await publicClient.request({ method: "anvil_mine", params: [1] });
+    console.log("Block mined.");
 
-  logSection("Queue proposal");
-  console.log(`Running: vibefi proposals:queue ${proposalId}...`);
-  result = await runCli(["proposals:queue", proposalId]);
-  if (result.code !== 0) throw new Error("proposals:queue failed");
-  const queueJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
-  if (!queueJson.txHash) throw new Error("Missing txHash from proposals:queue");
+    logSection(`Fetch proposal id: ${dapp.name}`);
+    console.log(`Waiting for tx receipt: ${proposeJson.txHash}...`);
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: proposeJson.txHash as Hex,
+      timeout: 15000
+    });
+    console.log("Receipt received.");
+    const governorAddress = devnet.vfiGovernor.toLowerCase();
+    const proposalLog = (receipt.logs ?? []).find((log) => log.address.toLowerCase() === governorAddress);
+    if (!proposalLog) throw new Error(`ProposalCreated log not found in receipt for ${dapp.name}`);
+    const decoded = decodeEventLog({
+      abi: governorAbi,
+      data: proposalLog.data as Hex,
+      topics: proposalLog.topics as [Hex, ...Hex[]]
+    });
+    const proposalId = ((decoded as unknown as { args: { proposalId: bigint } }).args).proposalId.toString();
+    console.log(`Using proposalId=${proposalId}`);
 
-  logSection("Advance time past timelock delay");
-  console.log("Increasing time by 2s and mining 1 block...");
-  await publicClient.request({ method: "evm_increaseTime", params: ["0x2"] });
-  await publicClient.request({ method: "anvil_mine", params: [1] });
-  console.log("Block mined.");
+    logSection(`Cast vote: ${dapp.name}`);
+    console.log(`Running: vibefi vote:cast ${proposalId} --support for...`);
+    result = await runCli(["vote:cast", proposalId, "--support", "for"]);
+    if (result.code !== 0) throw new Error(`vote:cast failed for ${dapp.name}`);
+    console.log("Vote cast.");
 
-  logSection("Execute proposal");
-  console.log(`Running: vibefi proposals:execute ${proposalId}...`);
-  result = await runCli(["proposals:execute", proposalId]);
-  if (result.code !== 0) throw new Error("proposals:execute failed");
-  const executeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
-  if (!executeJson.txHash) throw new Error("Missing txHash from proposals:execute");
+    logSection(`Mine blocks for voting period: ${dapp.name}`);
+    console.log("Mining 25 blocks for voting period...");
+    await publicClient.request({ method: "anvil_mine", params: [25] });
+    console.log("Blocks mined.");
+
+    logSection(`Vote status: ${dapp.name}`);
+    console.log(`Running: vibefi vote:status ${proposalId}...`);
+    result = await runCli(["vote:status", proposalId]);
+    if (result.code !== 0) throw new Error(`vote:status failed for ${dapp.name}`);
+
+    logSection(`Queue proposal: ${dapp.name}`);
+    console.log(`Running: vibefi proposals:queue ${proposalId}...`);
+    result = await runCli(["proposals:queue", proposalId]);
+    if (result.code !== 0) throw new Error(`proposals:queue failed for ${dapp.name}`);
+    const queueJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
+    if (!queueJson.txHash) throw new Error(`Missing txHash from proposals:queue for ${dapp.name}`);
+
+    logSection(`Advance time past timelock delay: ${dapp.name}`);
+    console.log("Increasing time by 2s and mining 1 block...");
+    await publicClient.request({ method: "evm_increaseTime", params: ["0x2"] });
+    await publicClient.request({ method: "anvil_mine", params: [1] });
+    console.log("Block mined.");
+
+    logSection(`Execute proposal: ${dapp.name}`);
+    console.log(`Running: vibefi proposals:execute ${proposalId}...`);
+    result = await runCli(["proposals:execute", proposalId]);
+    if (result.code !== 0) throw new Error(`proposals:execute failed for ${dapp.name}`);
+    const executeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
+    if (!executeJson.txHash) throw new Error(`Missing txHash from proposals:execute for ${dapp.name}`);
+
+    logSection(`Fetch dapp bundle: ${dapp.name}`);
+    console.log(`Running: vibefi dapp:fetch --root-cid ${packageJson.rootCid}...`);
+    result = await runCli(
+      [
+        "dapp:fetch",
+        "--root-cid", packageJson.rootCid,
+        "--out", path.join(cliDir, ".vibefi", "cache", packageJson.rootCid),
+        "--ipfs-api", ipfsApi,
+        "--ipfs-gateway", ipfsGateway
+      ],
+      { noRpc: true }
+    );
+    if (result.code !== 0) throw new Error(`dapp:fetch failed for ${dapp.name}`);
+    console.log(`Dapp bundle for ${dapp.name} fetched and verified.`);
+  }
 
   logSection("Dapp list");
   console.log("Running: vibefi dapp:list...");
   result = await runCli(["dapp:list"]);
   if (result.code !== 0) throw new Error("dapp:list failed");
   const dappList = JSON.parse(result.stdout || "[]") as Array<{ rootCid?: string }>;
-  const latest = dappList[dappList.length - 1];
-  if (!latest?.rootCid) throw new Error("Missing rootCid from dapp:list");
-  console.log(`Found ${dappList.length} dapp(s). Latest rootCid: ${latest.rootCid}`);
-
-  logSection("Fetch dapp bundle");
-  console.log(`Running: vibefi dapp:fetch --root-cid ${latest.rootCid}...`);
-  result = await runCli(
-    [
-      "dapp:fetch",
-      "--root-cid", latest.rootCid,
-      "--out", path.join(cliDir, ".vibefi", "cache", latest.rootCid),
-      "--ipfs-api", ipfsApi,
-      "--ipfs-gateway", ipfsGateway
-    ],
-    { noRpc: true }
-  );
-  if (result.code !== 0) throw new Error("dapp:fetch failed");
-  console.log("Dapp bundle fetched and verified.");
+  console.log(`Found ${dappList.length} dapp(s) in registry.`);
+  if (dappList.length < dappExamples.length) throw new Error(`Expected at least ${dappExamples.length} dapps, found ${dappList.length}`);
 
   console.log(`\nAnvil left running on :${anvilPort}`);
   console.log("E2E test completed successfully.");
