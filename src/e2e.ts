@@ -20,7 +20,8 @@ const contractsDir = path.join(monorepoDir, "contracts");
 const cliDir = path.join(monorepoDir, "cli");
 const dappExamples = [
   { dir: path.join(monorepoDir, "dapp-examples", "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
-  { dir: path.join(monorepoDir, "dapp-examples", "aave-v3"), name: "Aave V3", description: "Aave V3 example" }
+  { dir: path.join(monorepoDir, "dapp-examples", "aave-v3"), name: "Aave V3", description: "Aave V3 example" },
+  { dir: path.join(monorepoDir, "dapp-examples", "safe-admin"), name: "Safe Admin", description: "Safe admin example" }
 ];
 const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
