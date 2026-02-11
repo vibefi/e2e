@@ -29,7 +29,7 @@ const anvilPort = process.env.ANVIL_PORT ?? "8546";
 const rpcUrl = `http://127.0.0.1:${anvilPort}`;
 const ipfsApi = process.env.IPFS_API ?? "http://127.0.0.1:5001";
 const ipfsGateway = process.env.IPFS_GATEWAY ?? "http://127.0.0.1:8080";
-const forkUrl = process.env.MAINNET_FORK_URL ?? "";
+const forkUrl = process.env.MAINNET_RPC_URL ?? "";
 
 const publicClient = getPublicClient(rpcUrl) as AnvilClient;
 
@@ -136,7 +136,7 @@ async function main() {
   console.log("Starting local-devnet.sh (forking mainnet if configured)...");
   spawn("./script/local-devnet.sh", [], {
     cwd: contractsDir,
-    env: { ...process.env, ANVIL_PORT: anvilPort, FORK_URL: forkUrl },
+    env: { ...process.env, ANVIL_PORT: anvilPort, MAINNET_RPC_URL: forkUrl },
     stdio: "inherit"
   }).unref();
 
