@@ -19,7 +19,7 @@ cp .env.example .env
 Edit `.env` and set:
 
 - `MONOREPO_DIR` (absolute path to monorepo)
-- `MAINNET_FORK_URL` if you want a forked anvil
+- `MAINNET_RPC_URL` if you want a forked anvil
 
 ## Run
 
