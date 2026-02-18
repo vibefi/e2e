@@ -329,6 +329,9 @@ async function main() {
   if (result.code !== 0) throw new Error("proposals:list failed");
 
   const devnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  if (!devnet.testNetwork) {
+    throw new Error(`Expected ${devnetJsonPath} to set testNetwork=true`);
+  }
   let studioDappId: bigint | null = null;
   const cleanupDirs: string[] = [];
 
@@ -480,6 +483,9 @@ async function main() {
     throw new Error(`Studio dappId ${studioDappId.toString()} is missing rootCid`);
   }
   const updatedDevnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  if (!updatedDevnet.testNetwork) {
+    throw new Error(`Updated ${devnetJsonPath} is missing testNetwork=true`);
+  }
   if (!updatedDevnet.studioDappId || updatedDevnet.studioDappId !== Number(studioDappId)) {
     throw new Error(`devnet.json studioDappId was not persisted correctly`);
   }
