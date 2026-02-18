@@ -133,7 +133,8 @@ async function main() {
   console.log("Removing stale devnet.json...");
   fs.rmSync(devnetJsonPath, { force: true });
 
-  console.log("Starting local-devnet.sh (forking mainnet if configured)...");
+  let optionalForkingMessage = forkUrl ? ` with fork from ${forkUrl}` : "";
+  console.log(`Starting local-devnet.sh${optionalForkingMessage}...`);
   spawn("./script/local-devnet.sh", [], {
     cwd: contractsDir,
     env: { ...process.env, ANVIL_PORT: anvilPort, MAINNET_RPC_URL: forkUrl },
