@@ -35,8 +35,8 @@ const anvilPort = process.env.ANVIL_PORT ?? "8546";
 const rpcUrl = `http://127.0.0.1:${anvilPort}`;
 const ipfsApi = process.env.IPFS_API ?? "http://127.0.0.1:5001";
 const ipfsGateway = process.env.IPFS_GATEWAY ?? "http://127.0.0.1:8080";
-const mainnetForkUrl = process.env.MAINNET_RPC_URL;
-const sepoliaForkUrl = process.env.SEPOLIA_RPC_URL;
+const mainnetForkUrl = process.env.MAINNET_RPC_URL ?? "";
+const sepoliaForkUrl = process.env.SEPOLIA_RPC_URL ?? "";
 const forkUrl = useSepolia ? sepoliaForkUrl : mainnetForkUrl;
 const chainId = useSepolia ? "11155111" : "1";
 
