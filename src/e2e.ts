@@ -223,7 +223,7 @@ async function main() {
     console.log("Fork RPC not configured. Running unforked local anvil.");
   }
   if (useSepolia && !forkUrl) {
-    throw new Error("Missing Sepolia RPC URL. Set SEPOLIA_RPC_URL (or SEPOLIA_FORK_URL), or run without --sepolia.");
+    throw new Error("Missing Sepolia RPC URL. Set SEPOLIA_RPC_URL, or run without --sepolia.");
   }
 
   logSection("Start IPFS");
