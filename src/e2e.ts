@@ -1,10 +1,11 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { createWalletClient, decodeEventLog, http, type Hex } from "viem";
+import { createWalletClient, decodeEventLog, hexToString, http, isHex, type Hex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
-import { getPublicClient, loadDevnetJson, governorAbi, type DevnetJson } from "@vibefi/shared";
+import { dappRegistryAbi, getPublicClient, governorAbi, loadDevnetJson, type DevnetJson } from "@vibefi/shared";
 
 type AnvilClient = ReturnType<typeof getPublicClient> & {
   request(args: { method: "anvil_mine"; params: [number] }): Promise<void>;
@@ -18,10 +19,12 @@ if (!monorepoDir) {
 
 const contractsDir = path.join(monorepoDir, "contracts");
 const cliDir = path.join(monorepoDir, "cli");
-const dappExamples = [
-  { dir: path.join(monorepoDir, "dapp-examples", "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
-  { dir: path.join(monorepoDir, "dapp-examples", "aave-v3"), name: "Aave V3", description: "Aave V3 example" },
-  { dir: path.join(monorepoDir, "dapp-examples", "safe-admin"), name: "Safe Admin", description: "Safe admin example" }
+const studioDir = path.join(monorepoDir, "studio");
+const dapps = [
+  { key: "studio", dir: studioDir, name: "Studio", description: "VibeFi governance studio" },
+  { key: "uniswap-v2", dir: path.join(monorepoDir, "dapp-examples", "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
+  { key: "aave-v3", dir: path.join(monorepoDir, "dapp-examples", "aave-v3"), name: "Aave V3", description: "Aave V3 example" },
+  { key: "safe-admin", dir: path.join(monorepoDir, "dapp-examples", "safe-admin"), name: "Safe Admin", description: "Safe admin example" }
 ];
 const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
@@ -90,6 +93,101 @@ function runCli(
   return runCmd("bun", fullArgs, { cwd: cliDir, capture: true });
 }
 
+function copyDirRecursive(sourceDir: string, destDir: string) {
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const source = path.join(sourceDir, entry.name);
+    const dest = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(source, dest);
+      continue;
+    }
+    fs.copyFileSync(source, dest);
+  }
+}
+
+function createStudioPackagingDir(devnet: DevnetJson): string {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibefi-studio-e2e-"));
+  const entriesToCopy = ["src", "assets", "abis", "index.html", "package.json", "vibefi.json"];
+  for (const entry of entriesToCopy) {
+    const source = path.join(studioDir, entry);
+    const dest = path.join(tempDir, entry);
+    if (fs.statSync(source).isDirectory()) {
+      copyDirRecursive(source, dest);
+      continue;
+    }
+    fs.copyFileSync(source, dest);
+  }
+  const vibefiJsonPath = path.join(tempDir, "vibefi.json");
+  const vibefiJson = JSON.parse(fs.readFileSync(vibefiJsonPath, "utf-8")) as {
+    addresses?: Record<string, unknown>;
+    capabilities?: unknown;
+  };
+  vibefiJson.addresses = {
+    [String(devnet.chainId)]: {
+      vfiToken: devnet.vfiToken,
+      vfiGovernor: devnet.vfiGovernor,
+      dappRegistry: devnet.dappRegistry
+    }
+  };
+  fs.writeFileSync(vibefiJsonPath, `${JSON.stringify(vibefiJson, null, 2)}\n`);
+  return tempDir;
+}
+
+function decodeRootCid(rawRootCid: unknown): string {
+  if (typeof rawRootCid !== "string") return "";
+  if (!isHex(rawRootCid)) return rawRootCid;
+  try {
+    return hexToString(rawRootCid as Hex).replace(/\0+$/g, "");
+  } catch {
+    return rawRootCid;
+  }
+}
+
+function extractPublishedDappIdFromExecuteReceipt(
+  receipt: { logs?: Array<{ address: string; data: Hex; topics: readonly Hex[] }> },
+  dappRegistryAddress: string,
+  expectedRootCid: string
+): bigint | null {
+  const registry = dappRegistryAddress.toLowerCase();
+  for (const log of receipt.logs ?? []) {
+    if (log.address.toLowerCase() !== registry) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: dappRegistryAbi,
+        data: log.data,
+        topics: log.topics as [Hex, ...Hex[]]
+      }) as { eventName?: string; args?: { dappId?: bigint; rootCid?: Hex } };
+      if (decoded.eventName !== "DappPublished") continue;
+      const emittedRootCid = decodeRootCid(decoded.args?.rootCid);
+      if (emittedRootCid !== expectedRootCid) continue;
+      if (typeof decoded.args?.dappId === "bigint") {
+        return decoded.args.dappId;
+      }
+    } catch {
+      // ignore decode failures for unrelated logs
+    }
+  }
+  return null;
+}
+
+async function setStudioDappIdInDevnetJson(studioDappId: bigint) {
+  const result = await runCmd(
+    "bun",
+    [
+      path.join(contractsDir, "script", "set-devnet-studio-dapp-id.mjs"),
+      "--file",
+      devnetJsonPath,
+      "--studio-dapp-id",
+      studioDappId.toString()
+    ],
+    { cwd: contractsDir, capture: true }
+  );
+  if (result.code !== 0) {
+    throw new Error("failed to update studioDappId in devnet.json");
+  }
+}
+
 async function waitFor(
   label: string,
   probe: () => Promise<boolean>,
@@ -151,7 +249,8 @@ async function main() {
   console.log("Removing stale devnet.json...");
   fs.rmSync(devnetJsonPath, { force: true });
 
-  console.log("Starting local-devnet.sh (forking mainnet if configured)...");
+  let optionalForkingMessage = forkUrl ? ` with fork from ${forkUrl}` : "";
+  console.log(`Starting local-devnet.sh${optionalForkingMessage}...`);
   spawn("./script/local-devnet.sh", [], {
     cwd: contractsDir,
     env: { ...process.env, ANVIL_PORT: anvilPort, CHAIN_ID: chainId, MAINNET_RPC_URL: forkUrl },
@@ -230,12 +329,18 @@ async function main() {
   if (result.code !== 0) throw new Error("proposals:list failed");
 
   const devnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  let studioDappId: bigint | null = null;
+  const cleanupDirs: string[] = [];
 
-  for (const dapp of dappExamples) {
+  for (const dapp of dapps) {
+    const packagePath = dapp.key === "studio" ? createStudioPackagingDir(devnet) : dapp.dir;
+    if (dapp.key === "studio") {
+      cleanupDirs.push(packagePath);
+    }
     logSection(`Package dapp: ${dapp.name}`);
-    console.log(`Running: vibefi package (${dapp.dir})...`);
+    console.log(`Running: vibefi package (${packagePath})...`);
     result = await runCli(
-      ["package", "--path", dapp.dir, "--name", dapp.name, "--dapp-version", "0.0.1", "--description", dapp.description],
+      ["package", "--path", packagePath, "--name", dapp.name, "--dapp-version", "0.0.1", "--description", dapp.description],
       { noRpc: true }
     );
     if (result.code !== 0) throw new Error(`package failed for ${dapp.name}`);
@@ -315,6 +420,23 @@ async function main() {
     if (result.code !== 0) throw new Error(`proposals:execute failed for ${dapp.name}`);
     const executeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
     if (!executeJson.txHash) throw new Error(`Missing txHash from proposals:execute for ${dapp.name}`);
+    const executeReceipt = await publicClient.waitForTransactionReceipt({
+      hash: executeJson.txHash as Hex,
+      timeout: 15000
+    });
+    if (dapp.key === "studio") {
+      const maybeStudioDappId = extractPublishedDappIdFromExecuteReceipt(
+        executeReceipt,
+        devnet.dappRegistry,
+        packageJson.rootCid
+      );
+      if (maybeStudioDappId === null) {
+        throw new Error("Failed to detect Studio dappId from execute receipt");
+      }
+      await setStudioDappIdInDevnetJson(maybeStudioDappId);
+      studioDappId = maybeStudioDappId;
+      console.log(`Stored studioDappId=${studioDappId.toString()} in ${devnetJsonPath}`);
+    }
 
     logSection(`Fetch dapp bundle: ${dapp.name}`);
     console.log(`Running: vibefi dapp:fetch --root-cid ${packageJson.rootCid}...`);
@@ -336,9 +458,35 @@ async function main() {
   console.log("Running: vibefi dapp:list...");
   result = await runCli(["dapp:list"]);
   if (result.code !== 0) throw new Error("dapp:list failed");
-  const dappList = JSON.parse(result.stdout || "[]") as Array<{ rootCid?: string }>;
+  const dappList = JSON.parse(result.stdout || "[]") as Array<{
+    dappId?: string;
+    name?: string;
+    status?: string;
+    rootCid?: string;
+  }>;
   console.log(`Found ${dappList.length} dapp(s) in registry.`);
-  if (dappList.length < dappExamples.length) throw new Error(`Expected at least ${dappExamples.length} dapps, found ${dappList.length}`);
+  if (dappList.length < dapps.length) throw new Error(`Expected at least ${dapps.length} dapps, found ${dappList.length}`);
+  if (studioDappId === null) {
+    throw new Error("Studio dappId was not captured");
+  }
+  const studioEntry = dappList.find((entry) => entry.dappId === studioDappId?.toString());
+  if (!studioEntry) {
+    throw new Error(`Studio dappId ${studioDappId.toString()} not found in dapp:list output`);
+  }
+  if (studioEntry.status !== "Published") {
+    throw new Error(`Studio dappId ${studioDappId.toString()} status is ${studioEntry.status}`);
+  }
+  if (!studioEntry.rootCid) {
+    throw new Error(`Studio dappId ${studioDappId.toString()} is missing rootCid`);
+  }
+  const updatedDevnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  if (!updatedDevnet.studioDappId || updatedDevnet.studioDappId !== Number(studioDappId)) {
+    throw new Error(`devnet.json studioDappId was not persisted correctly`);
+  }
+
+  for (const dir of cleanupDirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 
   console.log(`\nAnvil left running on :${anvilPort}`);
   console.log("E2E test completed successfully.");
