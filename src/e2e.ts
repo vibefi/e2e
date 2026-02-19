@@ -20,11 +20,20 @@ if (!monorepoDir) {
 const contractsDir = path.join(monorepoDir, "contracts");
 const cliDir = path.join(monorepoDir, "cli");
 const studioDir = path.join(monorepoDir, "studio");
+const dappExamplesDir = path.join(monorepoDir, "dapp-examples");
+const zfiSourceDir = path.join(dappExamplesDir, "zfi", "dapp");
+const dappInstallTargets = [
+  { key: "uniswap-v2", dir: path.join(dappExamplesDir, "uniswap-v2") },
+  { key: "aave-v3", dir: path.join(dappExamplesDir, "aave-v3") },
+  { key: "safe-admin", dir: path.join(dappExamplesDir, "safe-admin") },
+  { key: "zfi", dir: zfiSourceDir }
+];
 const dapps = [
   { key: "studio", dir: studioDir, name: "Studio", description: "VibeFi governance studio" },
-  { key: "uniswap-v2", dir: path.join(monorepoDir, "dapp-examples", "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
-  { key: "aave-v3", dir: path.join(monorepoDir, "dapp-examples", "aave-v3"), name: "Aave V3", description: "Aave V3 example" },
-  { key: "safe-admin", dir: path.join(monorepoDir, "dapp-examples", "safe-admin"), name: "Safe Admin", description: "Safe admin example" }
+  { key: "uniswap-v2", dir: path.join(dappExamplesDir, "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
+  { key: "aave-v3", dir: path.join(dappExamplesDir, "aave-v3"), name: "Aave V3", description: "Aave V3 example" },
+  { key: "safe-admin", dir: path.join(dappExamplesDir, "safe-admin"), name: "Safe Admin", description: "Safe admin example" },
+  { key: "zfi", dir: zfiSourceDir, name: "zFi", description: "zFi static dapp" }
 ];
 const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
@@ -87,6 +96,46 @@ function runCli(
   return runCmd("bun", fullArgs, { cwd: cliDir, capture: true });
 }
 
+function parseCliJson<T>(stdout: string, context: string): T {
+  const trimmed = stdout.trim();
+  const candidates: string[] = [trimmed];
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+    const isJsonStart = char === "{" || char === "[";
+    const startsAtLineBoundary = i === 0 || trimmed[i - 1] === "\n";
+    if (isJsonStart && startsAtLineBoundary) {
+      candidates.push(trimmed.slice(i));
+    }
+  }
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate) as T;
+    } catch {
+      // keep trying
+    }
+  }
+  throw new Error(`${context}: failed to parse JSON output`);
+}
+
+function pickInstallCommand(baseDir: string): { command: string; args: string[] } | null {
+  const packageJsonPath = path.join(baseDir, "package.json");
+  if (!fs.existsSync(packageJsonPath)) return null;
+  if (fs.existsSync(path.join(baseDir, "bun.lock")) || fs.existsSync(path.join(baseDir, "bun.lockb"))) {
+    return { command: "bun", args: ["install"] };
+  }
+  if (fs.existsSync(path.join(baseDir, "package-lock.json"))) {
+    return { command: "npm", args: ["ci"] };
+  }
+  if (fs.existsSync(path.join(baseDir, "pnpm-lock.yaml"))) {
+    return { command: "pnpm", args: ["install", "--frozen-lockfile"] };
+  }
+  if (fs.existsSync(path.join(baseDir, "yarn.lock"))) {
+    return { command: "yarn", args: ["install", "--frozen-lockfile"] };
+  }
+  return { command: "bun", args: ["install"] };
+}
+
 function copyDirRecursive(sourceDir: string, destDir: string) {
   fs.mkdirSync(destDir, { recursive: true });
   for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
@@ -102,14 +151,25 @@ function copyDirRecursive(sourceDir: string, destDir: string) {
 
 function createStudioPackagingDir(devnet: DevnetJson): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibefi-studio-e2e-"));
-  const entriesToCopy = ["src", "assets", "abis", "index.html", "package.json", "vibefi.json"];
-  for (const entry of entriesToCopy) {
-    const source = path.join(studioDir, entry);
-    const dest = path.join(tempDir, entry);
-    if (fs.statSync(source).isDirectory()) {
+  const requiredDirs = ["src", "assets", "abis"];
+  const requiredFiles = ["index.html", "package.json", "vibefi.json"];
+
+  for (const dirEntry of requiredDirs) {
+    const source = path.join(studioDir, dirEntry);
+    const dest = path.join(tempDir, dirEntry);
+    if (fs.existsSync(source)) {
       copyDirRecursive(source, dest);
       continue;
     }
+    fs.mkdirSync(dest, { recursive: true });
+  }
+
+  for (const fileEntry of requiredFiles) {
+    const source = path.join(studioDir, fileEntry);
+    if (!fs.existsSync(source)) {
+      throw new Error(`Studio packaging is missing required file: ${source}`);
+    }
+    const dest = path.join(tempDir, fileEntry);
     fs.copyFileSync(source, dest);
   }
   const vibefiJsonPath = path.join(tempDir, "vibefi.json");
@@ -122,6 +182,23 @@ function createStudioPackagingDir(devnet: DevnetJson): string {
       vfiToken: devnet.vfiToken,
       vfiGovernor: devnet.vfiGovernor,
       dappRegistry: devnet.dappRegistry
+    }
+  };
+  fs.writeFileSync(vibefiJsonPath, `${JSON.stringify(vibefiJson, null, 2)}\n`);
+  return tempDir;
+}
+
+function createZfiPackagingDir(devnet: DevnetJson): string {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibefi-zfi-e2e-"));
+  copyDirRecursive(zfiSourceDir, tempDir);
+  const vibefiJsonPath = path.join(tempDir, "vibefi.json");
+  const vibefiJson = {
+    addresses: {
+      [String(devnet.chainId)]: {
+        vfiToken: devnet.vfiToken,
+        vfiGovernor: devnet.vfiGovernor,
+        dappRegistry: devnet.dappRegistry
+      }
     }
   };
   fs.writeFileSync(vibefiJsonPath, `${JSON.stringify(vibefiJson, null, 2)}\n`);
@@ -208,6 +285,41 @@ async function ensureContractsDeployed() {
 }
 
 async function main() {
+  logSection("Prepare dapp examples");
+  console.log("Ensuring nested dapp submodules are initialized...");
+  const submoduleResult = await runCmd("git", ["submodule", "update", "--init", "--recursive"], {
+    cwd: dappExamplesDir,
+    capture: true
+  });
+  if (submoduleResult.code !== 0) {
+    throw new Error("failed to initialize nested submodules under dapp-examples");
+  }
+  if (!fs.existsSync(zfiSourceDir)) {
+    throw new Error(`zFi submodule dapp directory missing: ${zfiSourceDir}`);
+  }
+
+  logSection("Install dapp dependencies");
+  for (const target of dappInstallTargets) {
+    if (!fs.existsSync(target.dir)) {
+      throw new Error(`Missing dapp directory for ${target.key}: ${target.dir}`);
+    }
+    const installCommand = pickInstallCommand(target.dir);
+    if (!installCommand) {
+      console.log(`[${target.key}] No package.json found, skipping dependency install.`);
+      continue;
+    }
+    console.log(
+      `[${target.key}] Running: ${installCommand.command} ${installCommand.args.join(" ")}`
+    );
+    const installResult = await runCmd(installCommand.command, installCommand.args, {
+      cwd: target.dir,
+      capture: true
+    });
+    if (installResult.code !== 0) {
+      throw new Error(`dependency install failed for ${target.key}`);
+    }
+  }
+
   logSection("Start IPFS");
   await runCmd("docker", ["compose", "-f", path.join(process.cwd(), "docker-compose.ipfs.yml"), "up", "-d"], {
     capture: true
@@ -315,8 +427,12 @@ async function main() {
   const cleanupDirs: string[] = [];
 
   for (const dapp of dapps) {
-    const packagePath = dapp.key === "studio" ? createStudioPackagingDir(devnet) : dapp.dir;
-    if (dapp.key === "studio") {
+    const packagePath = dapp.key === "studio"
+      ? createStudioPackagingDir(devnet)
+      : dapp.key === "zfi"
+        ? createZfiPackagingDir(devnet)
+        : dapp.dir;
+    if (dapp.key === "studio" || dapp.key === "zfi") {
       cleanupDirs.push(packagePath);
     }
     logSection(`Package dapp: ${dapp.name}`);
@@ -326,7 +442,7 @@ async function main() {
       { noRpc: true }
     );
     if (result.code !== 0) throw new Error(`package failed for ${dapp.name}`);
-    const packageJson = JSON.parse(result.stdout || "{}") as { rootCid?: string };
+    const packageJson = parseCliJson<{ rootCid?: string }>(result.stdout || "", `package (${dapp.name})`);
     if (!packageJson.rootCid) throw new Error(`Missing rootCid from package for ${dapp.name}`);
 
     logSection(`Propose dapp: ${dapp.name}`);
@@ -341,7 +457,7 @@ async function main() {
       "--proposal-description", proposalDescription
     ]);
     if (result.code !== 0) throw new Error(`dapp:propose failed for ${dapp.name}`);
-    const proposeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
+    const proposeJson = parseCliJson<{ txHash?: string }>(result.stdout || "", `dapp:propose (${dapp.name})`);
     if (!proposeJson.txHash) throw new Error(`Missing txHash from dapp:propose for ${dapp.name}`);
 
     logSection(`Mine block: ${dapp.name}`);
@@ -387,7 +503,7 @@ async function main() {
     console.log(`Running: vibefi proposals:queue ${proposalId}...`);
     result = await runCli(["proposals:queue", proposalId]);
     if (result.code !== 0) throw new Error(`proposals:queue failed for ${dapp.name}`);
-    const queueJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
+    const queueJson = parseCliJson<{ txHash?: string }>(result.stdout || "", `proposals:queue (${dapp.name})`);
     if (!queueJson.txHash) throw new Error(`Missing txHash from proposals:queue for ${dapp.name}`);
 
     logSection(`Advance time past timelock delay: ${dapp.name}`);
@@ -400,7 +516,7 @@ async function main() {
     console.log(`Running: vibefi proposals:execute ${proposalId}...`);
     result = await runCli(["proposals:execute", proposalId]);
     if (result.code !== 0) throw new Error(`proposals:execute failed for ${dapp.name}`);
-    const executeJson = JSON.parse(result.stdout || "{}") as { txHash?: string };
+    const executeJson = parseCliJson<{ txHash?: string }>(result.stdout || "", `proposals:execute (${dapp.name})`);
     if (!executeJson.txHash) throw new Error(`Missing txHash from proposals:execute for ${dapp.name}`);
     const executeReceipt = await publicClient.waitForTransactionReceipt({
       hash: executeJson.txHash as Hex,
@@ -440,12 +556,12 @@ async function main() {
   console.log("Running: vibefi dapp:list...");
   result = await runCli(["dapp:list"]);
   if (result.code !== 0) throw new Error("dapp:list failed");
-  const dappList = JSON.parse(result.stdout || "[]") as Array<{
+  const dappList = parseCliJson<Array<{
     dappId?: string;
     name?: string;
     status?: string;
     rootCid?: string;
-  }>;
+  }>>(result.stdout || "", "dapp:list");
   console.log(`Found ${dappList.length} dapp(s) in registry.`);
   if (dappList.length < dapps.length) throw new Error(`Expected at least ${dapps.length} dapps, found ${dappList.length}`);
   if (studioDappId === null) {
