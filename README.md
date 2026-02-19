@@ -19,12 +19,19 @@ cp .env.example .env
 Edit `.env` and set:
 
 - `MONOREPO_DIR` (absolute path to monorepo)
-- `MAINNET_RPC_URL` if you want a forked anvil
+- `MAINNET_RPC_URL` if you want a mainnet forked anvil
+- `SEPOLIA_RPC_URL` if you want to run `--sepolia`
 
 ## Run
 
 ```bash
 bun run e2e
+```
+
+Run against Sepolia fork:
+
+```bash
+bun run e2e --sepolia
 ```
 
 Notes:

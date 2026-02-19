@@ -37,11 +37,17 @@ const dapps = [
 ];
 const devnetJsonPath = path.join(contractsDir, ".devnet", "devnet.json");
 
+const argv = process.argv.slice(2);
+const useSepolia = argv.includes("--sepolia");
+
 const anvilPort = process.env.ANVIL_PORT ?? "8546";
 const rpcUrl = `http://127.0.0.1:${anvilPort}`;
 const ipfsApi = process.env.IPFS_API ?? "http://127.0.0.1:5001";
 const ipfsGateway = process.env.IPFS_GATEWAY ?? "http://127.0.0.1:8080";
-const forkUrl = process.env.MAINNET_RPC_URL ?? "";
+const mainnetForkUrl = process.env.MAINNET_RPC_URL ?? "";
+const sepoliaForkUrl = process.env.SEPOLIA_RPC_URL ?? "";
+const forkUrl = useSepolia ? sepoliaForkUrl : mainnetForkUrl;
+const chainId = useSepolia ? "11155111" : "1";
 
 const publicClient = getPublicClient(rpcUrl) as AnvilClient;
 
@@ -300,7 +306,18 @@ async function main() {
     });
     if (installResult.code !== 0) {
       throw new Error(`dependency install failed for ${target.key}`);
-    }
+  }
+    
+  logSection("Configuration");
+  console.log(`Mode: ${useSepolia ? "Sepolia fork" : "Mainnet fork/local"}`);
+  console.log(`Anvil chainId: ${chainId}`);
+  if (forkUrl) {
+    console.log(`Fork RPC configured: ${useSepolia ? "SEPOLIA" : "MAINNET"}`);
+  } else {
+    console.log("Fork RPC not configured. Running unforked local anvil.");
+  }
+  if (useSepolia && !forkUrl) {
+    throw new Error("Missing Sepolia RPC URL. Set SEPOLIA_RPC_URL, or run without --sepolia.");
   }
 
   logSection("Start IPFS");
@@ -330,7 +347,7 @@ async function main() {
   console.log(`Starting local-devnet.sh${optionalForkingMessage}...`);
   spawn("./script/local-devnet.sh", [], {
     cwd: contractsDir,
-    env: { ...process.env, ANVIL_PORT: anvilPort, MAINNET_RPC_URL: forkUrl },
+    env: { ...process.env, ANVIL_PORT: anvilPort, CHAIN_ID: chainId, MAINNET_RPC_URL: forkUrl },
     stdio: "inherit"
   }).unref();
 
@@ -406,6 +423,9 @@ async function main() {
   if (result.code !== 0) throw new Error("proposals:list failed");
 
   const devnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  if (!devnet.testNetwork) {
+    throw new Error(`Expected ${devnetJsonPath} to set testNetwork=true`);
+  }
   let studioDappId: bigint | null = null;
   const cleanupDirs: string[] = [];
 
@@ -559,6 +579,9 @@ async function main() {
     throw new Error(`Studio dappId ${studioDappId.toString()} is missing rootCid`);
   }
   const updatedDevnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  if (!updatedDevnet.testNetwork) {
+    throw new Error(`Updated ${devnetJsonPath} is missing testNetwork=true`);
+  }
   if (!updatedDevnet.studioDappId || updatedDevnet.studioDappId !== Number(studioDappId)) {
     throw new Error(`devnet.json studioDappId was not persisted correctly`);
   }
