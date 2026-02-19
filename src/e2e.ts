@@ -6,7 +6,6 @@ import path from "node:path";
 import { createWalletClient, decodeEventLog, hexToString, http, isHex, type Hex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { dappRegistryAbi, getPublicClient, governorAbi, loadDevnetJson, type DevnetJson } from "@vibefi/shared";
-import { ZFI_ADDRESSES } from "./zfi-addresses";
 
 type AnvilClient = ReturnType<typeof getPublicClient> & {
   request(args: { method: "anvil_mine"; params: [number] }): Promise<void>;
@@ -184,17 +183,6 @@ function createStudioPackagingDir(devnet: DevnetJson): string {
       vfiGovernor: devnet.vfiGovernor,
       dappRegistry: devnet.dappRegistry
     }
-  };
-  fs.writeFileSync(vibefiJsonPath, `${JSON.stringify(vibefiJson, null, 2)}\n`);
-  return tempDir;
-}
-
-function createZfiPackagingDir(): string {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibefi-zfi-e2e-"));
-  copyDirRecursive(zfiSourceDir, tempDir);
-  const vibefiJsonPath = path.join(tempDir, "vibefi.json");
-  const vibefiJson = {
-    addresses: ZFI_ADDRESSES
   };
   fs.writeFileSync(vibefiJsonPath, `${JSON.stringify(vibefiJson, null, 2)}\n`);
   return tempDir;
@@ -424,10 +412,8 @@ async function main() {
   for (const dapp of dapps) {
     const packagePath = dapp.key === "studio"
       ? createStudioPackagingDir(devnet)
-      : dapp.key === "zfi"
-        ? createZfiPackagingDir()
-        : dapp.dir;
-    if (dapp.key === "studio" || dapp.key === "zfi") {
+      : dapp.dir;
+    if (dapp.key === "studio") {
       cleanupDirs.push(packagePath);
     }
     logSection(`Package dapp: ${dapp.name}`);
