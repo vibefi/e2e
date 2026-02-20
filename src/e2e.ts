@@ -306,6 +306,7 @@ async function main() {
     });
     if (installResult.code !== 0) {
       throw new Error(`dependency install failed for ${target.key}`);
+    }
   }
     
   logSection("Configuration");

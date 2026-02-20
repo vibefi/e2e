@@ -1,0 +1,37 @@
+name: E2E Typecheck
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout e2e
+        uses: actions/checkout@v4
+
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: vibefi/monorepo
+          path: monorepo
+          token: ${{ secrets.MONOREPO_READ_TOKEN || github.token }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Rewrite @vibefi/shared to local monorepo path
+        run: |
+          node -e 'const fs=require("node:fs"); const p="package.json"; const j=JSON.parse(fs.readFileSync(p,"utf8")); const sharedPath="./monorepo/packages/shared"; if(!fs.existsSync(sharedPath)){ throw new Error(`Could not find @vibefi/shared at ${sharedPath}`); } j.dependencies["@vibefi/shared"]=`file:${sharedPath}`; fs.writeFileSync(p, `${JSON.stringify(j,null,2)}\n`); console.log(`Using @vibefi/shared -> file:${sharedPath}`);'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Typecheck
+        run: bun run typecheck
