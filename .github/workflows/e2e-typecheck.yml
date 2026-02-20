@@ -2,19 +2,9 @@ name: E2E Typecheck
 
 on:
   push:
-    paths:
-      - "src/e2e.ts"
-      - "tsconfig.json"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/e2e-typecheck.yml"
+    branches: [ master, main ]
   pull_request:
-    paths:
-      - "src/e2e.ts"
-      - "tsconfig.json"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/e2e-typecheck.yml"
+    branches: [ master, main ]
 
 jobs:
   typecheck:
