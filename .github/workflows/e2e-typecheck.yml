@@ -27,7 +27,7 @@ jobs:
       - name: Checkout monorepo
         uses: actions/checkout@v4
         with:
-          repository: vibefi/vibefi
+          repository: vibefi/monorepo
           path: monorepo
           token: ${{ secrets.MONOREPO_READ_TOKEN || github.token }}
 
@@ -38,7 +38,7 @@ jobs:
 
       - name: Rewrite @vibefi/shared to local monorepo path
         run: |
-          node -e 'const fs=require("node:fs"); const p="package.json"; const j=JSON.parse(fs.readFileSync(p,"utf8")); const candidates=["./monorepo/shared","./monorepo/packages/shared"]; const chosen=candidates.find((c)=>fs.existsSync(c)); if(!chosen){ throw new Error("Could not find @vibefi/shared in monorepo checkout"); } j.dependencies["@vibefi/shared"]=`file:${chosen}`; fs.writeFileSync(p, `${JSON.stringify(j,null,2)}\n`); console.log(`Using @vibefi/shared -> file:${chosen}`);'
+          node -e 'const fs=require("node:fs"); const p="package.json"; const j=JSON.parse(fs.readFileSync(p,"utf8")); const sharedPath="./monorepo/packages/shared"; if(!fs.existsSync(sharedPath)){ throw new Error(`Could not find @vibefi/shared at ${sharedPath}`); } j.dependencies["@vibefi/shared"]=`file:${sharedPath}`; fs.writeFileSync(p, `${JSON.stringify(j,null,2)}\n`); console.log(`Using @vibefi/shared -> file:${sharedPath}`);'
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
