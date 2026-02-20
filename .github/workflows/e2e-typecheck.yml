@@ -41,7 +41,7 @@ jobs:
           node -e 'const fs=require("node:fs"); const p="package.json"; const j=JSON.parse(fs.readFileSync(p,"utf8")); const sharedPath="./monorepo/packages/shared"; if(!fs.existsSync(sharedPath)){ throw new Error(`Could not find @vibefi/shared at ${sharedPath}`); } j.dependencies["@vibefi/shared"]=`file:${sharedPath}`; fs.writeFileSync(p, `${JSON.stringify(j,null,2)}\n`); console.log(`Using @vibefi/shared -> file:${sharedPath}`);'
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Typecheck
         run: bun run typecheck
