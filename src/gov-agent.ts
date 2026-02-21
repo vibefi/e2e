@@ -129,6 +129,10 @@ export async function testGovernanceAgent(config: E2eConfig) {
       (decoded as unknown as { args: { proposalId: bigint } }).args
     ).proposalId.toString();
     console.log(`Gov-agent test proposalId=${proposalId}`);
+    const proposalCreatedBlock = receipt.blockNumber;
+    if (proposalCreatedBlock === null || proposalCreatedBlock === undefined) {
+      throw new Error("Proposal receipt missing blockNumber");
+    }
 
     // 5. Mine 2 blocks past voting delay
     logSection("Mine past voting delay");
@@ -136,9 +140,11 @@ export async function testGovernanceAgent(config: E2eConfig) {
     await config.publicClient.request({ method: "anvil_mine", params: [2] });
     console.log("Blocks mined.");
 
-    // 6. Capture current block number for GOV_AGENT_FROM_BLOCK
-    const fromBlock = await config.publicClient.getBlockNumber();
-    console.log(`Captured fromBlock=${fromBlock} for GOV_AGENT_FROM_BLOCK`);
+    // 6. Start scanning from the proposal's creation block so ProposalCreated is in range.
+    const fromBlock = proposalCreatedBlock;
+    console.log(
+      `Using fromBlock=${fromBlock} (proposal creation block) for GOV_AGENT_FROM_BLOCK`
+    );
 
     // 7. Capture pre-vote status
     logSection("Pre-vote status");
@@ -224,33 +230,28 @@ export async function testGovernanceAgent(config: E2eConfig) {
       throw new Error(`State file not found at ${stateFilePath}`);
     }
     const stateRaw = fs.readFileSync(stateFilePath, "utf-8");
-    const state = JSON.parse(stateRaw) as Record<
-      string,
-      {
-        review?: { score?: number; llm_summary?: string | null };
-        decision?: { vote?: string };
-        vote_execution?: { submitted?: boolean; tx_hash?: string | null };
-      }
-    >;
-    // Find the proposal entry — state keys may be proposal IDs or other identifiers
-    const proposalEntries = Object.values(state);
-    const entry = proposalEntries.find(
-      (e) =>
-        e.review?.score !== undefined &&
-        e.vote_execution?.submitted !== undefined
-    );
+    type StoredProposal = {
+      review?: { score?: number; llm_summary?: string | null };
+      decision?: { vote?: string };
+      vote_execution?: { submitted?: boolean; tx_hash?: string | null } | null;
+    };
+    const state = JSON.parse(stateRaw) as {
+      last_scanned_block?: number;
+      proposals?: Record<string, StoredProposal>;
+    };
+    const proposals = state.proposals;
+    if (!proposals || typeof proposals !== "object") {
+      throw new Error("State file is missing proposals map");
+    }
+    const entry = proposals[proposalId];
     if (!entry) {
+      const available = Object.keys(proposals);
       throw new Error(
-        "State file has no proposal entry with review.score and vote_execution.submitted"
+        `State file is missing proposal entry for ${proposalId}; available keys=${available.join(",")}`
       );
     }
     if (entry.review?.score === undefined) {
       throw new Error("State file entry is missing review.score");
-    }
-    if (entry.review?.llm_summary === undefined || entry.review.llm_summary === null) {
-      throw new Error(
-        "State file entry has null/missing review.llm_summary (LLM did not run)"
-      );
     }
     if (!entry.decision?.vote) {
       throw new Error("State file entry is missing decision.vote");
@@ -260,6 +261,11 @@ export async function testGovernanceAgent(config: E2eConfig) {
     }
     if (!entry.vote_execution?.tx_hash) {
       throw new Error("State file entry is missing vote_execution.tx_hash");
+    }
+    if (entry.review?.llm_summary === undefined || entry.review.llm_summary === null) {
+      throw new Error(
+        "State file entry has null/missing review.llm_summary (LLM did not run)"
+      );
     }
     console.log(
       `State file verified: score=${entry.review.score}, vote=${entry.decision.vote}, tx=${entry.vote_execution.tx_hash}`
