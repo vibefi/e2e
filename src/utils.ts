@@ -4,7 +4,7 @@ import path from "node:path";
 import { hexToString, isHex, type Hex } from "viem";
 import { dappRegistryAbi, loadDevnetJson } from "@vibefi/shared";
 import { decodeEventLog } from "viem";
-import type { E2eConfig } from "./config";
+import { config, publicClient } from "./config";
 import { isToolOutputEnabled, logger } from "./logger";
 
 const startTime = Date.now();
@@ -60,17 +60,17 @@ export function runCmd(
 }
 
 export function runCli(
-  config: E2eConfig,
   args: string[],
   options: { noRpc?: boolean } = {}
 ) {
   logger.debug("Run vibefi CLI: %s", args.join(" "));
+  const { cliDir, rpcUrl, devnetJsonPath } = config();
   const fullArgs = ["run", "src/index.ts", ...args];
   if (!options.noRpc) {
-    fullArgs.push("--rpc", config.rpcUrl, "--devnet", config.devnetJsonPath);
+    fullArgs.push("--rpc", rpcUrl, "--devnet", devnetJsonPath);
   }
   fullArgs.push("--json");
-  return runCmd("bun", fullArgs, { cwd: config.cliDir, capture: true });
+  return runCmd("bun", fullArgs, { cwd: cliDir, capture: true });
 }
 
 export function parseCliJson<T>(stdout: string, context: string): T {
@@ -181,9 +181,9 @@ export async function waitFor(
   return false;
 }
 
-export async function ensureContractsDeployed(config: E2eConfig): Promise<boolean> {
-  const devnet = loadDevnetJson(config.devnetJsonPath);
+export async function ensureContractsDeployed(): Promise<boolean> {
+  const devnet = loadDevnetJson(config().devnetJsonPath);
   if (!devnet) return false;
-  const code = await config.publicClient.getBytecode({ address: devnet.vfiGovernor as Hex });
+  const code = await publicClient().getBytecode({ address: devnet.vfiGovernor as Hex });
   return (code ?? "0x") !== "0x";
 }

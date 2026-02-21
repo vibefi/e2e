@@ -1,17 +1,19 @@
 import { loadDevnetJson, type DevnetJson } from "@vibefi/shared";
-import type { E2eConfig } from "./config";
+import { config } from "./config";
 import { logSection, runCli, parseCliJson } from "./utils";
+import { expect } from "bun:test";
 import { logger } from "./logger";
 
 export async function verifyRegistry(
-  config: E2eConfig,
   expectedCount: number,
   studioDappId: bigint
 ) {
+  const { devnetJsonPath } = config();
+
   logSection("Dapp list");
   logger.debug("Running: vibefi dapp:list...");
-  const result = await runCli(config, ["dapp:list"]);
-  if (result.code !== 0) throw new Error("dapp:list failed");
+  const result = await runCli(["dapp:list"]);
+  expect(result.code).toBe(0);
   const dappList = parseCliJson<
     Array<{
       dappId?: string;
@@ -21,40 +23,17 @@ export async function verifyRegistry(
     }>
   >(result.stdout || "", "dapp:list");
   logger.info("Found %s dapp(s) in registry.", dappList.length);
-  if (dappList.length < expectedCount)
-    throw new Error(
-      `Expected at least ${expectedCount} dapps, found ${dappList.length}`
-    );
+  expect(dappList.length).toBeGreaterThanOrEqual(expectedCount);
 
   const studioEntry = dappList.find(
     (entry) => entry.dappId === studioDappId.toString()
   );
-  if (!studioEntry) {
-    throw new Error(
-      `Studio dappId ${studioDappId.toString()} not found in dapp:list output`
-    );
-  }
-  if (studioEntry.status !== "Published") {
-    throw new Error(
-      `Studio dappId ${studioDappId.toString()} status is ${studioEntry.status}`
-    );
-  }
-  if (!studioEntry.rootCid) {
-    throw new Error(
-      `Studio dappId ${studioDappId.toString()} is missing rootCid`
-    );
-  }
+  expect(studioEntry).toBeDefined();
+  expect(studioEntry!.status).toBe("Published");
+  expect(studioEntry!.rootCid).toBeDefined();
 
-  const updatedDevnet = loadDevnetJson(config.devnetJsonPath) as DevnetJson;
-  if (!updatedDevnet.testNetwork) {
-    throw new Error(
-      `Updated ${config.devnetJsonPath} is missing testNetwork=true`
-    );
-  }
-  if (
-    !updatedDevnet.studioDappId ||
-    updatedDevnet.studioDappId !== Number(studioDappId)
-  ) {
-    throw new Error("devnet.json studioDappId was not persisted correctly");
-  }
+  const updatedDevnet = loadDevnetJson(devnetJsonPath) as DevnetJson;
+  expect(updatedDevnet.testNetwork).toBe(true);
+  expect(updatedDevnet.studioDappId).toBeDefined();
+  expect(updatedDevnet.studioDappId).toBe(Number(studioDappId));
 }

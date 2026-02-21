@@ -24,28 +24,27 @@ Edit `.env` and set:
 
 ## Run
 
+To execute the test suite (via the built-in `bun:test` runner):
+
 ```bash
 bun run e2e
 ```
 
 Run against Sepolia fork:
-
 ```bash
-bun run e2e --sepolia
+bun run e2e -- --sepolia
 ```
 
 Control log verbosity:
-
 ```bash
-bun run e2e --quiet
-bun run e2e --verbose
-bun run e2e --verbosity=normal
+bun run e2e -- --quiet
+bun run e2e -- --verbose
+bun run e2e -- --verbosity=normal
 ```
 
 Show subprocess/tool output (hidden by default):
-
 ```bash
-bun run e2e --tool-output
+bun run e2e -- --tool-output
 ```
 
 Notes:

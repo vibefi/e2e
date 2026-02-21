@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { getPublicClient } from "@vibefi/shared";
 
@@ -42,6 +43,32 @@ export interface E2eConfig {
 }
 
 export type E2eVerbosity = "quiet" | "normal" | "verbose";
+
+/* ------------------------------------------------------------------ */
+/*  Singleton                                                         */
+/* ------------------------------------------------------------------ */
+
+let _config: E2eConfig | null = null;
+
+/** Parse CLI args + env vars and store the singleton config. */
+export function initConfig(argv: string[]): void {
+  _config = buildConfig(argv);
+}
+
+/** Return the singleton config. Throws if initConfig() hasn't been called. */
+export function config(): E2eConfig {
+  if (!_config) throw new Error("Config not initialized — call initConfig() first");
+  return _config;
+}
+
+/** Convenience accessor for the Anvil-aware viem public client. */
+export function publicClient(): AnvilClient {
+  return config().publicClient;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Internal                                                          */
+/* ------------------------------------------------------------------ */
 
 function parseVerbosity(argv: string[]): E2eVerbosity {
   const quietFlag = argv.includes("--quiet") || argv.includes("-q");
@@ -90,23 +117,34 @@ function parseVerbosity(argv: string[]): E2eVerbosity {
   return "normal";
 }
 
-export function buildConfig(argv: string[]): E2eConfig {
+function buildConfig(argv: string[]): E2eConfig {
+  const args = process.env.E2E_ARGS ? JSON.parse(process.env.E2E_ARGS) : argv;
+
   const monorepoDir = process.env.MONOREPO_DIR;
   if (!monorepoDir) {
     throw new Error("MONOREPO_DIR is required (absolute path to the monorepo)");
   }
 
   const contractsDir = path.join(monorepoDir, "contracts");
+
+  // Align environment with contracts/.env where local-devnet.sh sources variables
+  const contractsEnvPath = path.join(contractsDir, ".env");
+  if (fs.existsSync(contractsEnvPath)) {
+    // We import dotenv dynamically or require it. Since we're using ESM, we can use default dotenv features:
+    const dotenv = require("dotenv");
+    dotenv.config({ path: contractsEnvPath });
+  }
+
   const cliDir = path.join(monorepoDir, "cli");
   const studioDir = path.join(monorepoDir, "studio");
   const dappExamplesDir = path.join(monorepoDir, "dapp-examples");
   const zfiSourceDir = path.join(dappExamplesDir, "zfi", "dapp");
 
-  const useSepolia = argv.includes("--sepolia");
-  const useGovAgent = argv.includes("--gov-agent");
-  const verbosity = parseVerbosity(argv);
+  const useSepolia = args.includes("--sepolia");
+  const useGovAgent = args.includes("--gov-agent");
+  const verbosity = parseVerbosity(args);
   const streamToolOutput =
-    argv.includes("--tool-output") || argv.includes("--show-tool-output");
+    args.includes("--tool-output") || args.includes("--show-tool-output");
 
   const anvilPort = process.env.ANVIL_PORT ?? "8546";
   const rpcUrl = `http://127.0.0.1:${anvilPort}`;
