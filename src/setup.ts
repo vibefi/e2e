@@ -5,10 +5,11 @@ import { createWalletClient, http } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import type { E2eConfig } from "./config";
 import { logSection, runCmd, runCli, pickInstallCommand, waitFor, ensureContractsDeployed } from "./utils";
+import { isToolOutputEnabled, logger } from "./logger";
 
 export async function prepareDappExamples(config: E2eConfig) {
   logSection("Prepare dapp examples");
-  console.log("Ensuring nested dapp submodules are initialized...");
+  logger.debug("Ensuring nested dapp submodules are initialized...");
   const submoduleResult = await runCmd("git", ["submodule", "update", "--init", "--recursive"], {
     cwd: config.dappExamplesDir,
     capture: true,
@@ -27,11 +28,14 @@ export async function prepareDappExamples(config: E2eConfig) {
     }
     const installCommand = pickInstallCommand(target.dir);
     if (!installCommand) {
-      console.log(`[${target.key}] No package.json found, skipping dependency install.`);
+      logger.debug("[%s] No package.json found, skipping dependency install.", target.key);
       continue;
     }
-    console.log(
-      `[${target.key}] Running: ${installCommand.command} ${installCommand.args.join(" ")}`
+    logger.debug(
+      "[%s] Installing dependencies via: %s %s",
+      target.key,
+      installCommand.command,
+      installCommand.args.join(" ")
     );
     const installResult = await runCmd(installCommand.command, installCommand.args, {
       cwd: target.dir,
@@ -45,12 +49,12 @@ export async function prepareDappExamples(config: E2eConfig) {
 
 export async function startInfrastructure(config: E2eConfig) {
   logSection("Configuration");
-  console.log(`Mode: ${config.useSepolia ? "Sepolia fork" : "Mainnet fork/local"}`);
-  console.log(`Anvil chainId: ${config.chainId}`);
+  logger.info("Mode: %s", config.useSepolia ? "Sepolia fork" : "Mainnet fork/local");
+  logger.info("Anvil chainId: %s", config.chainId);
   if (config.forkUrl) {
-    console.log(`Fork RPC configured: ${config.useSepolia ? "SEPOLIA" : "MAINNET"}`);
+    logger.info("Fork RPC configured: %s", config.useSepolia ? "SEPOLIA" : "MAINNET");
   } else {
-    console.log("Fork RPC not configured. Running unforked local anvil.");
+    logger.info("Fork RPC not configured. Running unforked local anvil.");
   }
   if (config.useSepolia && !config.forkUrl) {
     throw new Error("Missing Sepolia RPC URL. Set SEPOLIA_RPC_URL, or run without --sepolia.");
@@ -62,10 +66,10 @@ export async function startInfrastructure(config: E2eConfig) {
   });
 
   logSection("Start devnet");
-  console.log(`Checking if anvil is already running on :${config.anvilPort}...`);
+  logger.debug("Checking if anvil is already running on :%s...", config.anvilPort);
   const alreadyRunning = await waitFor("RPC", () => config.publicClient.getChainId().then(() => true), 2000);
   if (alreadyRunning) {
-    console.log(`Anvil already running on :${config.anvilPort}, killing...`);
+    logger.info("Anvil already running on :%s, killing...", config.anvilPort);
     await runCmd(
       "bash",
       ["-c", `lsof -t -i:${config.anvilPort} -a -c anvil | xargs kill -SIGTERM 2>/dev/null || true`],
@@ -73,33 +77,33 @@ export async function startInfrastructure(config: E2eConfig) {
     );
     await new Promise((r) => setTimeout(r, 1000));
   } else {
-    console.log("No existing anvil found.");
+    logger.debug("No existing anvil found.");
   }
 
-  console.log("Removing stale devnet.json...");
+  logger.debug("Removing stale devnet.json...");
   fs.rmSync(config.devnetJsonPath, { force: true });
 
   const optionalForkingMessage = config.forkUrl ? ` with fork from ${config.forkUrl}` : "";
-  console.log(`Starting local-devnet.sh${optionalForkingMessage}...`);
+  logger.info("Starting local-devnet.sh%s...", optionalForkingMessage);
   spawn("./script/local-devnet.sh", [], {
     cwd: config.contractsDir,
     env: { ...process.env, ANVIL_PORT: config.anvilPort, CHAIN_ID: config.chainId, MAINNET_RPC_URL: config.forkUrl },
-    stdio: "inherit",
+    stdio: isToolOutputEnabled() ? "inherit" : "ignore",
   }).unref();
 
-  console.log(`Waiting for RPC at ${config.rpcUrl}...`);
+  logger.info("Waiting for RPC at %s...", config.rpcUrl);
   const rpcReady = await waitFor("RPC", async () => {
     const chainId = await config.publicClient.getChainId();
-    console.log(`RPC responded with chainId=${chainId}`);
+    logger.debug("RPC responded with chainId=%s", chainId);
     return true;
   }, 30000);
   if (!rpcReady) {
     throw new Error(`RPC not ready at ${config.rpcUrl}`);
   }
-  console.log("RPC is ready.");
+  logger.info("RPC is ready.");
 
   logSection("Check IPFS");
-  console.log(`Checking IPFS at ${config.ipfsApi}...`);
+  logger.info("Checking IPFS at %s...", config.ipfsApi);
   const ipfsReady = await waitFor("IPFS", async () => {
     const res = await fetch(new URL("/api/v0/version", config.ipfsApi).toString(), { method: "POST" });
     return res.ok;
@@ -107,21 +111,21 @@ export async function startInfrastructure(config: E2eConfig) {
   if (!ipfsReady) {
     throw new Error(`IPFS not ready at ${config.ipfsApi}.`);
   }
-  console.log("IPFS is ready.");
+  logger.info("IPFS is ready.");
 
   logSection("Wait for contracts");
-  console.log("Waiting for VibeFi contracts to be deployed...");
+  logger.info("Waiting for VibeFi contracts to be deployed...");
   const deployTimeout = 120000;
   const deployStart = Date.now();
   let lastLog = 0;
   while (Date.now() - deployStart < deployTimeout) {
     if (await ensureContractsDeployed(config)) {
-      console.log("Contracts deployed successfully.");
+      logger.info("Contracts deployed successfully.");
       break;
     }
     const elapsed = Date.now() - deployStart;
     if (elapsed - lastLog > 5000) {
-      console.log(`Still waiting for contracts... (${Math.round(elapsed / 1000)}s elapsed)`);
+      logger.debug("Still waiting for contracts... (%ss elapsed)", Math.round(elapsed / 1000));
       lastLog = elapsed;
     }
     await new Promise((r) => setTimeout(r, 500));
@@ -140,23 +144,23 @@ export async function runSanityChecks(config: E2eConfig) {
   });
 
   logSection("Send sanity tx via viem");
-  console.log("Sending sanity transaction...");
+  logger.info("Sending sanity transaction...");
   const sanityTxHash = await walletClient.sendTransaction({
     chain: null,
     to: devAccount.address,
     value: 0n,
   });
-  console.log(`Sanity tx hash: ${sanityTxHash}`);
+  logger.debug("Sanity tx hash: %s", sanityTxHash);
   await config.publicClient.waitForTransactionReceipt({ hash: sanityTxHash });
-  console.log("Sanity tx confirmed.");
+  logger.info("Sanity tx confirmed.");
 
   logSection("CLI status");
-  console.log("Running: vibefi status...");
+  logger.debug("Running: vibefi status...");
   let result = await runCli(config, ["status"]);
   if (result.code !== 0) throw new Error("status failed");
 
   logSection("List proposals");
-  console.log("Running: vibefi proposals:list...");
+  logger.debug("Running: vibefi proposals:list...");
   result = await runCli(config, ["proposals:list"]);
   if (result.code !== 0) throw new Error("proposals:list failed");
 }

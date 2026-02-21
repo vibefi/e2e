@@ -1,6 +1,7 @@
 import { loadDevnetJson, type DevnetJson } from "@vibefi/shared";
 import type { E2eConfig } from "./config";
 import { logSection, runCli, parseCliJson } from "./utils";
+import { logger } from "./logger";
 
 export async function verifyRegistry(
   config: E2eConfig,
@@ -8,7 +9,7 @@ export async function verifyRegistry(
   studioDappId: bigint
 ) {
   logSection("Dapp list");
-  console.log("Running: vibefi dapp:list...");
+  logger.debug("Running: vibefi dapp:list...");
   const result = await runCli(config, ["dapp:list"]);
   if (result.code !== 0) throw new Error("dapp:list failed");
   const dappList = parseCliJson<
@@ -19,7 +20,7 @@ export async function verifyRegistry(
       rootCid?: string;
     }>
   >(result.stdout || "", "dapp:list");
-  console.log(`Found ${dappList.length} dapp(s) in registry.`);
+  logger.info("Found %s dapp(s) in registry.", dappList.length);
   if (dappList.length < expectedCount)
     throw new Error(
       `Expected at least ${expectedCount} dapps, found ${dappList.length}`

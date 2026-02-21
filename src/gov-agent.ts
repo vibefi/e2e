@@ -5,6 +5,7 @@ import { decodeEventLog, type Hex } from "viem";
 import { governorAbi } from "@vibefi/shared";
 import type { E2eConfig } from "./config";
 import { logSection, runCmd, runCli, parseCliJson } from "./utils";
+import { logger } from "./logger";
 
 const VOTER1_PRIVATE_KEY =
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
@@ -31,7 +32,7 @@ export async function testGovernanceAgent(config: E2eConfig) {
   try {
     // 2. Create temp keystore for voter1
     logSection("Create voter1 keystore");
-    console.log("Importing voter1 private key into temp keystore...");
+    logger.debug("Importing voter1 private key into temp keystore...");
     const importResult = await runCmd(
       "cast",
       [
@@ -51,12 +52,12 @@ export async function testGovernanceAgent(config: E2eConfig) {
       throw new Error("cast wallet import failed for voter1 keystore");
     }
     const keystorePath = path.join(tmpKeystoreDir, "gov-e2e-voter");
-    console.log(`Keystore created at ${keystorePath}`);
+    logger.debug("Keystore created at %s", keystorePath);
 
     // 3. Package test dapp (uniswap-v2 with version 0.0.2)
     logSection("Package gov-agent test dapp");
     const uniswapDir = path.join(config.dappExamplesDir, "uniswap-v2");
-    console.log("Running: vibefi package (uniswap-v2 v0.0.2)...");
+    logger.debug("Running: vibefi package (uniswap-v2 v0.0.2)...");
     let result = await runCli(
       config,
       [
@@ -83,7 +84,7 @@ export async function testGovernanceAgent(config: E2eConfig) {
     // 4. Propose via CLI
     logSection("Propose gov-agent test dapp");
     const proposalDescription = `Gov-agent E2E proposal ${Date.now()}`;
-    console.log(`Running: vibefi dapp:propose (rootCid=${packageJson.rootCid})...`);
+    logger.debug("Running: vibefi dapp:propose (rootCid=%s)...", packageJson.rootCid);
     result = await runCli(config, [
       "dapp:propose",
       "--root-cid",
@@ -128,7 +129,7 @@ export async function testGovernanceAgent(config: E2eConfig) {
     const proposalId = (
       (decoded as unknown as { args: { proposalId: bigint } }).args
     ).proposalId.toString();
-    console.log(`Gov-agent test proposalId=${proposalId}`);
+    logger.info("Gov-agent test proposalId=%s", proposalId);
     const proposalCreatedBlock = receipt.blockNumber;
     if (proposalCreatedBlock === null || proposalCreatedBlock === undefined) {
       throw new Error("Proposal receipt missing blockNumber");
@@ -136,19 +137,20 @@ export async function testGovernanceAgent(config: E2eConfig) {
 
     // 5. Mine 2 blocks past voting delay
     logSection("Mine past voting delay");
-    console.log("Mining 2 blocks...");
+    logger.debug("Mining 2 blocks...");
     await config.publicClient.request({ method: "anvil_mine", params: [2] });
-    console.log("Blocks mined.");
+    logger.debug("Blocks mined.");
 
     // 6. Start scanning from the proposal's creation block so ProposalCreated is in range.
     const fromBlock = proposalCreatedBlock;
-    console.log(
-      `Using fromBlock=${fromBlock} (proposal creation block) for GOV_AGENT_FROM_BLOCK`
+    logger.info(
+      "Using fromBlock=%s (proposal creation block) for GOV_AGENT_FROM_BLOCK",
+      fromBlock
     );
 
     // 7. Capture pre-vote status
     logSection("Pre-vote status");
-    console.log(`Running: vibefi vote:status ${proposalId}...`);
+    logger.debug("Running: vibefi vote:status %s...", proposalId);
     result = await runCli(config, ["vote:status", proposalId]);
     if (result.code !== 0) throw new Error("vote:status failed (pre-vote)");
     const preVoteStatus = parseCliJson<{
@@ -156,13 +158,16 @@ export async function testGovernanceAgent(config: E2eConfig) {
       againstVotes?: string;
       abstainVotes?: string;
     }>(result.stdout || "", "vote:status (pre-vote)");
-    console.log(
-      `Pre-vote: for=${preVoteStatus.forVotes ?? "0"} against=${preVoteStatus.againstVotes ?? "0"} abstain=${preVoteStatus.abstainVotes ?? "0"}`
+    logger.debug(
+      "Pre-vote: for=%s against=%s abstain=%s",
+      preVoteStatus.forVotes ?? "0",
+      preVoteStatus.againstVotes ?? "0",
+      preVoteStatus.abstainVotes ?? "0"
     );
 
     // 8. Run gov-agent
     logSection("Run governance agent");
-    console.log("Running: cargo run -- run --once --auto-vote ...");
+    logger.debug("Running: cargo run -- run --once --auto-vote ...");
     const agentResult = await runCmd(
       "cargo",
       [
@@ -192,11 +197,11 @@ export async function testGovernanceAgent(config: E2eConfig) {
     if (agentResult.code !== 0) {
       throw new Error(`gov-agent exited with code ${agentResult.code}`);
     }
-    console.log("Gov-agent completed.");
+    logger.info("Gov-agent completed.");
 
     // 9. Verify vote was cast (compare pre/post vote:status)
     logSection("Post-vote status");
-    console.log(`Running: vibefi vote:status ${proposalId}...`);
+    logger.debug("Running: vibefi vote:status %s...", proposalId);
     result = await runCli(config, ["vote:status", proposalId]);
     if (result.code !== 0) throw new Error("vote:status failed (post-vote)");
     const postVoteStatus = parseCliJson<{
@@ -204,8 +209,11 @@ export async function testGovernanceAgent(config: E2eConfig) {
       againstVotes?: string;
       abstainVotes?: string;
     }>(result.stdout || "", "vote:status (post-vote)");
-    console.log(
-      `Post-vote: for=${postVoteStatus.forVotes ?? "0"} against=${postVoteStatus.againstVotes ?? "0"} abstain=${postVoteStatus.abstainVotes ?? "0"}`
+    logger.debug(
+      "Post-vote: for=%s against=%s abstain=%s",
+      postVoteStatus.forVotes ?? "0",
+      postVoteStatus.againstVotes ?? "0",
+      postVoteStatus.abstainVotes ?? "0"
     );
 
     const preTotal =
@@ -221,7 +229,7 @@ export async function testGovernanceAgent(config: E2eConfig) {
         `Vote totals did not increase: pre=${preTotal} post=${postTotal}`
       );
     }
-    console.log("Vote was cast successfully.");
+    logger.info("Vote was cast successfully.");
 
     // 10. Verify state file
     logSection("Verify gov-agent state file");
@@ -267,42 +275,45 @@ export async function testGovernanceAgent(config: E2eConfig) {
         "State file entry has null/missing review.llm_summary (LLM did not run)"
       );
     }
-    console.log(
-      `State file verified: score=${entry.review.score}, vote=${entry.decision.vote}, tx=${entry.vote_execution.tx_hash}`
+    logger.info(
+      "State file verified: score=%s vote=%s tx=%s",
+      entry.review.score,
+      entry.decision.vote,
+      entry.vote_execution.tx_hash
     );
 
     // 11. DEV votes For (safety net for proposal passage)
     logSection("DEV safety vote");
-    console.log(`Running: vibefi vote:cast ${proposalId} --support for (DEV)...`);
+    logger.debug("Running: vibefi vote:cast %s --support for (DEV)...", proposalId);
     result = await runCli(config, ["vote:cast", proposalId, "--support", "for"]);
     if (result.code !== 0) throw new Error("DEV safety vote:cast failed");
-    console.log("DEV safety vote cast.");
+    logger.debug("DEV safety vote cast.");
 
     // 12. Mine 25 blocks → queue → timelock → execute
     logSection("Complete governance cycle for gov-agent dapp");
-    console.log("Mining 25 blocks for voting period...");
+    logger.debug("Mining 25 blocks for voting period...");
     await config.publicClient.request({ method: "anvil_mine", params: [25] });
-    console.log("Blocks mined.");
+    logger.debug("Blocks mined.");
 
-    console.log(`Running: vibefi proposals:queue ${proposalId}...`);
+    logger.debug("Running: vibefi proposals:queue %s...", proposalId);
     result = await runCli(config, ["proposals:queue", proposalId]);
     if (result.code !== 0) throw new Error("proposals:queue failed for gov-agent dapp");
 
-    console.log("Advancing time past timelock delay...");
+    logger.debug("Advancing time past timelock delay...");
     await config.publicClient.request({
       method: "evm_increaseTime",
       params: ["0x2"],
     });
     await config.publicClient.request({ method: "anvil_mine", params: [1] });
 
-    console.log(`Running: vibefi proposals:execute ${proposalId}...`);
+    logger.debug("Running: vibefi proposals:execute %s...", proposalId);
     result = await runCli(config, ["proposals:execute", proposalId]);
     if (result.code !== 0)
       throw new Error("proposals:execute failed for gov-agent dapp");
 
     // 13. Verify dapp published via dapp:list
     logSection("Verify gov-agent dapp published");
-    console.log("Running: vibefi dapp:list...");
+    logger.debug("Running: vibefi dapp:list...");
     result = await runCli(config, ["dapp:list"]);
     if (result.code !== 0) throw new Error("dapp:list failed");
     const dappList = parseCliJson<
@@ -310,20 +321,20 @@ export async function testGovernanceAgent(config: E2eConfig) {
     >(result.stdout || "", "dapp:list (gov-agent)");
 
     // We expect 6 dapps now (5 original + 1 gov-agent test dapp)
-    console.log(`Found ${dappList.length} dapp(s) in registry.`);
+    logger.info("Found %s dapp(s) in registry.", dappList.length);
     if (dappList.length < 6) {
       throw new Error(
         `Expected at least 6 dapps after gov-agent test, found ${dappList.length}`
       );
     }
     const published = dappList.filter((d) => d.status === "Published");
-    console.log(`${published.length} dapp(s) with Published status.`);
+    logger.info("%s dapp(s) with Published status.", published.length);
     if (published.length < 6) {
       throw new Error(
         `Expected at least 6 Published dapps, found ${published.length}`
       );
     }
-    console.log("Gov-agent test dapp published successfully.");
+    logger.info("Gov-agent test dapp published successfully.");
   } finally {
     // 14. Cleanup temp dirs
     fs.rmSync(tmpKeystoreDir, { recursive: true, force: true });

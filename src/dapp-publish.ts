@@ -12,6 +12,7 @@ import {
   copyDirRecursive,
   extractPublishedDappIdFromExecuteReceipt,
 } from "./utils";
+import { logger } from "./logger";
 
 function createStudioPackagingDir(config: E2eConfig, devnet: DevnetJson): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibefi-studio-e2e-"));
@@ -88,7 +89,7 @@ export async function publishAllDapps(
     }
 
     logSection(`Package dapp: ${dapp.name}`);
-    console.log(`Running: vibefi package (${packagePath})...`);
+    logger.debug("Running: vibefi package (%s)...", packagePath);
     let result = await runCli(
       config,
       [
@@ -114,7 +115,7 @@ export async function publishAllDapps(
 
     logSection(`Propose dapp: ${dapp.name}`);
     const proposalDescription = `E2E proposal ${dapp.name} ${Date.now()}`;
-    console.log(`Running: vibefi dapp:propose (rootCid=${packageJson.rootCid})...`);
+    logger.debug("Running: vibefi dapp:propose (rootCid=%s)...", packageJson.rootCid);
     result = await runCli(config, [
       "dapp:propose",
       "--root-cid",
@@ -137,17 +138,17 @@ export async function publishAllDapps(
       throw new Error(`Missing txHash from dapp:propose for ${dapp.name}`);
 
     logSection(`Mine block: ${dapp.name}`);
-    console.log("Mining 1 block...");
+    logger.debug("Mining 1 block...");
     await config.publicClient.request({ method: "anvil_mine", params: [1] });
-    console.log("Block mined.");
+    logger.debug("Block mined.");
 
     logSection(`Fetch proposal id: ${dapp.name}`);
-    console.log(`Waiting for tx receipt: ${proposeJson.txHash}...`);
+    logger.debug("Waiting for tx receipt: %s...", proposeJson.txHash);
     const receipt = await config.publicClient.waitForTransactionReceipt({
       hash: proposeJson.txHash as Hex,
       timeout: 15000,
     });
-    console.log("Receipt received.");
+    logger.debug("Receipt received.");
     const governorAddress = devnet.vfiGovernor.toLowerCase();
     const proposalLog = (receipt.logs ?? []).find(
       (log) => log.address.toLowerCase() === governorAddress
@@ -162,26 +163,26 @@ export async function publishAllDapps(
     const proposalId = (
       (decoded as unknown as { args: { proposalId: bigint } }).args
     ).proposalId.toString();
-    console.log(`Using proposalId=${proposalId}`);
+    logger.info("Proposal id: %s", proposalId);
 
     logSection(`Cast vote: ${dapp.name}`);
-    console.log(`Running: vibefi vote:cast ${proposalId} --support for...`);
+    logger.debug("Running: vibefi vote:cast %s --support for...", proposalId);
     result = await runCli(config, ["vote:cast", proposalId, "--support", "for"]);
     if (result.code !== 0) throw new Error(`vote:cast failed for ${dapp.name}`);
-    console.log("Vote cast.");
+    logger.debug("Vote cast.");
 
     logSection(`Mine blocks for voting period: ${dapp.name}`);
-    console.log("Mining 25 blocks for voting period...");
+    logger.debug("Mining 25 blocks for voting period...");
     await config.publicClient.request({ method: "anvil_mine", params: [25] });
-    console.log("Blocks mined.");
+    logger.debug("Blocks mined.");
 
     logSection(`Vote status: ${dapp.name}`);
-    console.log(`Running: vibefi vote:status ${proposalId}...`);
+    logger.debug("Running: vibefi vote:status %s...", proposalId);
     result = await runCli(config, ["vote:status", proposalId]);
     if (result.code !== 0) throw new Error(`vote:status failed for ${dapp.name}`);
 
     logSection(`Queue proposal: ${dapp.name}`);
-    console.log(`Running: vibefi proposals:queue ${proposalId}...`);
+    logger.debug("Running: vibefi proposals:queue %s...", proposalId);
     result = await runCli(config, ["proposals:queue", proposalId]);
     if (result.code !== 0) throw new Error(`proposals:queue failed for ${dapp.name}`);
     const queueJson = parseCliJson<{ txHash?: string }>(
@@ -192,13 +193,13 @@ export async function publishAllDapps(
       throw new Error(`Missing txHash from proposals:queue for ${dapp.name}`);
 
     logSection(`Advance time past timelock delay: ${dapp.name}`);
-    console.log("Increasing time by 2s and mining 1 block...");
+    logger.debug("Increasing time by 2s and mining 1 block...");
     await config.publicClient.request({ method: "evm_increaseTime", params: ["0x2"] });
     await config.publicClient.request({ method: "anvil_mine", params: [1] });
-    console.log("Block mined.");
+    logger.debug("Block mined.");
 
     logSection(`Execute proposal: ${dapp.name}`);
-    console.log(`Running: vibefi proposals:execute ${proposalId}...`);
+    logger.debug("Running: vibefi proposals:execute %s...", proposalId);
     result = await runCli(config, ["proposals:execute", proposalId]);
     if (result.code !== 0) throw new Error(`proposals:execute failed for ${dapp.name}`);
     const executeJson = parseCliJson<{ txHash?: string }>(
@@ -222,13 +223,15 @@ export async function publishAllDapps(
       }
       await setStudioDappIdInDevnetJson(config, maybeStudioDappId);
       studioDappId = maybeStudioDappId;
-      console.log(
-        `Stored studioDappId=${studioDappId.toString()} in ${config.devnetJsonPath}`
+      logger.info(
+        "Stored studioDappId=%s in %s",
+        studioDappId.toString(),
+        config.devnetJsonPath
       );
     }
 
     logSection(`Fetch dapp bundle: ${dapp.name}`);
-    console.log(`Running: vibefi dapp:fetch --root-cid ${packageJson.rootCid}...`);
+    logger.debug("Running: vibefi dapp:fetch --root-cid %s...", packageJson.rootCid);
     result = await runCli(
       config,
       [
@@ -245,7 +248,7 @@ export async function publishAllDapps(
       { noRpc: true }
     );
     if (result.code !== 0) throw new Error(`dapp:fetch failed for ${dapp.name}`);
-    console.log(`Dapp bundle for ${dapp.name} fetched and verified.`);
+    logger.info("Dapp bundle for %s fetched and verified.", dapp.name);
   }
 
   if (studioDappId === null) {

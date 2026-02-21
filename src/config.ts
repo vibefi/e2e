@@ -34,9 +34,60 @@ export interface E2eConfig {
   chainId: string;
   useSepolia: boolean;
   useGovAgent: boolean;
+  verbosity: E2eVerbosity;
+  streamToolOutput: boolean;
   publicClient: AnvilClient;
   dapps: DappEntry[];
   dappInstallTargets: InstallTarget[];
+}
+
+export type E2eVerbosity = "quiet" | "normal" | "verbose";
+
+function parseVerbosity(argv: string[]): E2eVerbosity {
+  const quietFlag = argv.includes("--quiet") || argv.includes("-q");
+  const verboseFlag = argv.includes("--verbose") || argv.includes("-v");
+  const verbosityOptionPrefix = "--verbosity=";
+  let verbosityOption: E2eVerbosity | null = null;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--verbosity") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error("Missing value for --verbosity (expected quiet|normal|verbose)");
+      }
+      if (value !== "quiet" && value !== "normal" && value !== "verbose") {
+        throw new Error(`Invalid --verbosity value: ${value}`);
+      }
+      verbosityOption = value;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith(verbosityOptionPrefix)) {
+      const value = arg.slice(verbosityOptionPrefix.length);
+      if (value !== "quiet" && value !== "normal" && value !== "verbose") {
+        throw new Error(`Invalid --verbosity value: ${value}`);
+      }
+      verbosityOption = value;
+    }
+  }
+
+  if (verbosityOption && (quietFlag || verboseFlag)) {
+    throw new Error("Use either --verbosity or --quiet/--verbose flags, not both");
+  }
+  if (quietFlag && verboseFlag) {
+    throw new Error("Use either --quiet or --verbose, not both");
+  }
+  if (verbosityOption) {
+    return verbosityOption;
+  }
+  if (quietFlag) {
+    return "quiet";
+  }
+  if (verboseFlag) {
+    return "verbose";
+  }
+  return "normal";
 }
 
 export function buildConfig(argv: string[]): E2eConfig {
@@ -53,6 +104,9 @@ export function buildConfig(argv: string[]): E2eConfig {
 
   const useSepolia = argv.includes("--sepolia");
   const useGovAgent = argv.includes("--gov-agent");
+  const verbosity = parseVerbosity(argv);
+  const streamToolOutput =
+    argv.includes("--tool-output") || argv.includes("--show-tool-output");
 
   const anvilPort = process.env.ANVIL_PORT ?? "8546";
   const rpcUrl = `http://127.0.0.1:${anvilPort}`;
@@ -96,6 +150,8 @@ export function buildConfig(argv: string[]): E2eConfig {
     chainId,
     useSepolia,
     useGovAgent,
+    verbosity,
+    streamToolOutput,
     publicClient,
     dapps,
     dappInstallTargets,

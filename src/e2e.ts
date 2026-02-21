@@ -5,9 +5,19 @@ import { prepareDappExamples, startInfrastructure, runSanityChecks } from "./set
 import { publishAllDapps } from "./dapp-publish";
 import { verifyRegistry } from "./verify";
 import { testGovernanceAgent } from "./gov-agent";
+import { configureLogger, logger } from "./logger";
 
 async function main() {
   const config = buildConfig(process.argv.slice(2));
+  configureLogger({
+    verbosity: config.verbosity,
+    streamToolOutput: config.streamToolOutput,
+  });
+  logger.info(
+    "Starting E2E run (verbosity=%s, toolOutput=%s)",
+    config.verbosity,
+    config.streamToolOutput ? "on" : "off"
+  );
 
   await prepareDappExamples(config);
   await startInfrastructure(config);
@@ -24,11 +34,14 @@ async function main() {
     await testGovernanceAgent(config);
   }
 
-  console.log(`\nAnvil left running on :${config.anvilPort}`);
-  console.log("E2E test completed successfully.");
+  logger.info("Anvil left running on :%s", config.anvilPort);
+  logger.info("E2E test completed successfully.");
 }
 
 main().catch((err) => {
-  console.error("E2E test failed:", err instanceof Error ? err.message : err);
+  logger.error("E2E test failed: %s", err instanceof Error ? err.message : String(err));
+  if (err instanceof Error && err.stack) {
+    logger.debug("%s", err.stack);
+  }
   process.exitCode = 1;
 });

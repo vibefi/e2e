@@ -34,6 +34,20 @@ Run against Sepolia fork:
 bun run e2e --sepolia
 ```
 
+Control log verbosity:
+
+```bash
+bun run e2e --quiet
+bun run e2e --verbose
+bun run e2e --verbosity=normal
+```
+
+Show subprocess/tool output (hidden by default):
+
+```bash
+bun run e2e --tool-output
+```
+
 Notes:
 - This script starts IPFS via docker compose in the background.
 - It starts a devnet via `contracts/script/local-devnet.sh` and leaves Anvil running on the configured port.

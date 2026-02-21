@@ -5,12 +5,13 @@ import { hexToString, isHex, type Hex } from "viem";
 import { dappRegistryAbi, loadDevnetJson } from "@vibefi/shared";
 import { decodeEventLog } from "viem";
 import type { E2eConfig } from "./config";
+import { isToolOutputEnabled, logger } from "./logger";
 
 const startTime = Date.now();
 
 export function logSection(title: string) {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`\n=== ${title} [+${elapsed}s] ===`);
+  logger.info("=== %s [+%ss] ===", title, elapsed);
 }
 
 export function runCmd(
@@ -18,31 +19,43 @@ export function runCmd(
   args: string[],
   options: { cwd?: string; env?: NodeJS.ProcessEnv; capture?: boolean; stream?: boolean } = {}
 ) {
-  return new Promise<{ code: number; stdout: string }>((resolve, reject) => {
+  const capture = options.capture ?? true;
+  const stream = options.stream ?? isToolOutputEnabled();
+  logger.debug(
+    "Run command: %s %s%s",
+    command,
+    args.join(" "),
+    options.cwd ? ` (cwd=${options.cwd})` : ""
+  );
+
+  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
-      stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: capture ? ["ignore", "pipe", "pipe"] : stream ? "inherit" : "ignore",
     });
 
     let stdout = "";
-    if (options.capture) {
+    let stderr = "";
+    if (capture) {
       child.stdout?.on("data", (data) => {
         const chunk = data.toString();
         stdout += chunk;
-        if (options.stream !== false) {
+        if (stream) {
           process.stdout.write(chunk);
         }
       });
       child.stderr?.on("data", (data) => {
-        if (options.stream !== false) {
-          process.stderr.write(data.toString());
+        const chunk = data.toString();
+        stderr += chunk;
+        if (stream) {
+          process.stderr.write(chunk);
         }
       });
     }
 
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout }));
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
   });
 }
 
@@ -51,6 +64,7 @@ export function runCli(
   args: string[],
   options: { noRpc?: boolean } = {}
 ) {
+  logger.debug("Run vibefi CLI: %s", args.join(" "));
   const fullArgs = ["run", "src/index.ts", ...args];
   if (!options.noRpc) {
     fullArgs.push("--rpc", config.rpcUrl, "--devnet", config.devnetJsonPath);
@@ -163,7 +177,7 @@ export async function waitFor(
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  console.log(`${label} not ready after ${timeoutMs}ms timeout`);
+  logger.warn("%s not ready after %sms timeout", label, timeoutMs);
   return false;
 }
 
