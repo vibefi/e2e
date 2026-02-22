@@ -18,8 +18,8 @@ export async function getClientAutomation(): Promise<ClientAutomation | null> {
     const clientDir = path.join(monorepoDir, "client");
 
     if (!cachedClientBinary) {
-        logger.info("Building client (cargo build)...");
-        const buildResult = await runCmd("cargo", ["build"], {
+        logger.info("Building client (cargo build --features automation)...");
+        const buildResult = await runCmd("cargo", ["build", "--features", "automation"], {
             cwd: clientDir,
             capture: true,
         });
