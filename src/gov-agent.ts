@@ -8,8 +8,10 @@ import { logSection, runCmd, runCli, parseCliJson } from "./utils";
 import { expect } from "bun:test";
 import { logger } from "./logger";
 
+// SECURITY: Test-only key from Hardhat/Foundry defaults. Never use in production or with real funds.
 const VOTER1_PRIVATE_KEY =
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+// SECURITY: Test-only keystore password for E2E tests. Never use in production or with real funds.
 const KEYSTORE_PASSWORD = "e2e-test-password";
 
 export async function testGovernanceAgent() {
