@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadDevnetJson } from "@vibefi/shared";
 import { config, publicClient } from "./config";
 import { proposeDapp, castVote, queueAndExecute } from "./governance";
-import { logSection, runCmd, runCli, parseCliJson } from "./utils";
+import { logSection, runCmd, runCli, runCliJson, parseCliJson } from "./utils";
 import { expect } from "bun:test";
 import { logger } from "./logger";
 
@@ -57,7 +57,7 @@ export async function testGovernanceAgent() {
     logSection("Package gov-agent test dapp");
     const uniswapDir = path.join(dappExamplesDir, "uniswap-v2");
     logger.debug("Running: vibefi package (uniswap-v2 v0.0.2)...");
-    const packageResult = await runCli(
+    const packageJson = await runCliJson<{ rootCid?: string }>(
       [
         "package",
         "--path",
@@ -69,12 +69,8 @@ export async function testGovernanceAgent() {
         "--description",
         "Gov agent e2e test dapp",
       ],
+      "package (gov-agent)",
       { noRpc: true }
-    );
-    expect(packageResult.code).toBe(0);
-    const packageJson = parseCliJson<{ rootCid?: string }>(
-      packageResult.stdout || "",
-      "package (gov-agent)"
     );
     expect(packageJson.rootCid).toBeDefined();
 
@@ -105,13 +101,11 @@ export async function testGovernanceAgent() {
     // --- capture pre-vote status ---
     logSection("Pre-vote status");
     logger.debug("Running: vibefi vote:status %s...", proposalId);
-    let result = await runCli(["vote:status", proposalId]);
-    expect(result.code).toBe(0);
-    const preVoteStatus = parseCliJson<{
+    const preVoteStatus = await runCliJson<{
       forVotes?: string;
       againstVotes?: string;
       abstainVotes?: string;
-    }>(result.stdout || "", "vote:status (pre-vote)");
+    }>(["vote:status", proposalId], "vote:status (pre-vote)");
     logger.debug(
       "Pre-vote: for=%s against=%s abstain=%s",
       preVoteStatus.forVotes ?? "0",
@@ -154,13 +148,11 @@ export async function testGovernanceAgent() {
     // --- verify vote was cast ---
     logSection("Post-vote status");
     logger.debug("Running: vibefi vote:status %s...", proposalId);
-    result = await runCli(["vote:status", proposalId]);
-    expect(result.code).toBe(0);
-    const postVoteStatus = parseCliJson<{
+    const postVoteStatus = await runCliJson<{
       forVotes?: string;
       againstVotes?: string;
       abstainVotes?: string;
-    }>(result.stdout || "", "vote:status (post-vote)");
+    }>(["vote:status", proposalId], "vote:status (post-vote)");
     logger.debug(
       "Post-vote: for=%s against=%s abstain=%s",
       postVoteStatus.forVotes ?? "0",
@@ -226,11 +218,9 @@ export async function testGovernanceAgent() {
     // --- verify dapp published ---
     logSection("Verify gov-agent dapp published");
     logger.debug("Running: vibefi dapp:list...");
-    result = await runCli(["dapp:list"]);
-    expect(result.code).toBe(0);
-    const dappList = parseCliJson<
+    const dappList = await runCliJson<
       Array<{ dappId?: string; name?: string; status?: string }>
-    >(result.stdout || "", "dapp:list (gov-agent)");
+    >(["dapp:list"], "dapp:list (gov-agent)");
 
     logger.info("Found %s dapp(s) in registry.", dappList.length);
     expect(dappList.length).toBeGreaterThanOrEqual(6);

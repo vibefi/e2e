@@ -1,7 +1,7 @@
 import { decodeEventLog, type Hex } from "viem";
 import { governorAbi, loadDevnetJson } from "@vibefi/shared";
 import { config, publicClient } from "./config";
-import { logSection, runCli, parseCliJson } from "./utils";
+import { logSection, runCli, runCliJson, parseCliJson } from "./utils";
 import { logger } from "./logger";
 
 /**
@@ -17,7 +17,7 @@ export async function proposeDapp(opts: {
 }) {
   logSection(`Propose dapp: ${opts.name}`);
   logger.debug("Running: vibefi dapp:propose (rootCid=%s)...", opts.rootCid);
-  const result = await runCli([
+  const proposeJson = await runCliJson<{ txHash?: string }>([
     "dapp:propose",
     "--root-cid",
     opts.rootCid,
@@ -29,12 +29,7 @@ export async function proposeDapp(opts: {
     opts.description,
     "--proposal-description",
     opts.proposalDescription,
-  ]);
-  if (result.code !== 0) throw new Error(`dapp:propose failed for ${opts.name}`);
-  const proposeJson = parseCliJson<{ txHash?: string }>(
-    result.stdout || "",
-    `dapp:propose (${opts.name})`
-  );
+  ], `dapp:propose (${opts.name})`);
   if (!proposeJson.txHash)
     throw new Error(`Missing txHash from dapp:propose for ${opts.name}`);
 
@@ -94,11 +89,8 @@ export async function queueAndExecute(proposalId: string) {
 
   logSection("Queue proposal");
   logger.debug("Running: vibefi proposals:queue %s...", proposalId);
-  const queueResult = await runCli(["proposals:queue", proposalId]);
-  if (queueResult.code !== 0)
-    throw new Error(`proposals:queue failed for proposal ${proposalId}`);
-  const queueJson = parseCliJson<{ txHash?: string }>(
-    queueResult.stdout || "",
+  const queueJson = await runCliJson<{ txHash?: string }>(
+    ["proposals:queue", proposalId],
     "proposals:queue"
   );
   if (!queueJson.txHash) throw new Error("Missing txHash from proposals:queue");
@@ -111,11 +103,8 @@ export async function queueAndExecute(proposalId: string) {
 
   logSection("Execute proposal");
   logger.debug("Running: vibefi proposals:execute %s...", proposalId);
-  const execResult = await runCli(["proposals:execute", proposalId]);
-  if (execResult.code !== 0)
-    throw new Error(`proposals:execute failed for proposal ${proposalId}`);
-  const executeJson = parseCliJson<{ txHash?: string }>(
-    execResult.stdout || "",
+  const executeJson = await runCliJson<{ txHash?: string }>(
+    ["proposals:execute", proposalId],
     "proposals:execute"
   );
   if (!executeJson.txHash) throw new Error("Missing txHash from proposals:execute");

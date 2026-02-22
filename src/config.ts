@@ -68,30 +68,20 @@ export function publicClient(): AnvilClient {
 function parseVerbosity(argv: string[]): E2eVerbosity {
   const quietFlag = argv.includes("--quiet") || argv.includes("-q");
   const verboseFlag = argv.includes("--verbose") || argv.includes("-v");
-  const verbosityOptionPrefix = "--verbosity=";
-  let verbosityOption: E2eVerbosity | null = null;
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--verbosity") {
-      const value = argv[index + 1];
-      if (!value) {
-        throw new Error("Missing value for --verbosity (expected quiet|normal|verbose)");
-      }
-      if (value !== "quiet" && value !== "normal" && value !== "verbose") {
-        throw new Error(`Invalid --verbosity value: ${value}`);
-      }
-      verbosityOption = value;
-      index += 1;
-      continue;
+  let verbosityOption: string | null = null;
+  const verbosityIndex = argv.indexOf("--verbosity");
+  if (verbosityIndex !== -1 && verbosityIndex + 1 < argv.length) {
+    verbosityOption = argv[verbosityIndex + 1];
+  } else {
+    const prefixArg = argv.find(a => a.startsWith("--verbosity="));
+    if (prefixArg) {
+      verbosityOption = prefixArg.slice("--verbosity=".length);
     }
-    if (arg.startsWith(verbosityOptionPrefix)) {
-      const value = arg.slice(verbosityOptionPrefix.length);
-      if (value !== "quiet" && value !== "normal" && value !== "verbose") {
-        throw new Error(`Invalid --verbosity value: ${value}`);
-      }
-      verbosityOption = value;
-    }
+  }
+
+  if (verbosityOption && verbosityOption !== "quiet" && verbosityOption !== "normal" && verbosityOption !== "verbose") {
+    throw new Error(`Invalid --verbosity value: ${verbosityOption}`);
   }
 
   if (verbosityOption && (quietFlag || verboseFlag)) {
@@ -100,16 +90,8 @@ function parseVerbosity(argv: string[]): E2eVerbosity {
   if (quietFlag && verboseFlag) {
     throw new Error("Use either --quiet or --verbose, not both");
   }
-  if (verbosityOption) {
-    return verbosityOption;
-  }
-  if (quietFlag) {
-    return "quiet";
-  }
-  if (verboseFlag) {
-    return "verbose";
-  }
-  return "normal";
+
+  return (verbosityOption as E2eVerbosity) || (quietFlag ? "quiet" : verboseFlag ? "verbose" : "normal");
 }
 
 function buildConfig(argv: string[]): E2eConfig {

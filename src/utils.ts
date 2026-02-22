@@ -74,25 +74,34 @@ export function runCli(
 }
 
 export function parseCliJson<T>(stdout: string, context: string): T {
-  const trimmed = stdout.trim();
-  const candidates: string[] = [trimmed];
-  for (let i = 0; i < trimmed.length; i += 1) {
-    const char = trimmed[i];
-    const isJsonStart = char === "{" || char === "[";
-    const startsAtLineBoundary = i === 0 || trimmed[i - 1] === "\n";
-    if (isJsonStart && startsAtLineBoundary) {
-      candidates.push(trimmed.slice(i));
-    }
-  }
-  for (const candidate of candidates) {
-    if (!candidate) continue;
+  const regex = /^[\[\{]/gm;
+  let match;
+  while ((match = regex.exec(stdout)) !== null) {
     try {
-      return JSON.parse(candidate) as T;
+      return JSON.parse(stdout.slice(match.index)) as T;
     } catch {
-      // keep trying
+      // keep trying later matches
     }
   }
-  throw new Error(`${context}: failed to parse JSON output`);
+  try {
+    return JSON.parse(stdout.trim()) as T;
+  } catch {
+    throw new Error(`${context}: failed to parse JSON output`);
+  }
+}
+
+export async function runCliJson<T>(
+  args: string[],
+  context: string,
+  options?: { noRpc?: boolean }
+): Promise<T> {
+  const result = await runCli(args, options);
+  if (result.code !== 0) {
+    const stderr = result.stderr?.trim() || "";
+    const firstLine = stderr.split("\n")[0] || "unknown error";
+    throw new Error(`${context} failed (exit=${result.code}): ${firstLine}`);
+  }
+  return parseCliJson<T>(result.stdout || "", context);
 }
 
 export function copyDirRecursive(sourceDir: string, destDir: string) {
