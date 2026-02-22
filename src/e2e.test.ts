@@ -7,6 +7,17 @@ import { publishAllDapps } from "./dapp-publish";
 import { verifyRegistry } from "./verify";
 import { testGovernanceAgent } from "./gov-agent";
 import { configureLogger, logger } from "./logger";
+import { invariant } from "./assertions";
+import { waitFor } from "./utils";
+import {
+    getClientAutomation,
+    waitForLauncherWebview,
+    waitForDappListPopulated,
+    launchDappFromLauncher,
+    waitForWebviewText,
+    waitForWebviewKindText,
+    automateWalletConnectFlow,
+} from "./client-e2e-helpers";
 
 describe("E2E Test Suite", () => {
     let cleanupDirs: string[] = [];
@@ -64,4 +75,80 @@ describe("E2E Test Suite", () => {
             logger.info("Skipping governance agent test (useGovAgent is false)");
         }
     });
+
+    it("should load the Studio tab in client", async () => {
+        const automation = await getClientAutomation();
+        if (!automation) return;
+
+        try {
+            const launcher = await waitForLauncherWebview(automation);
+            await waitForDappListPopulated(automation, launcher.id);
+
+            const initialWebviews = await automation.listWebviews();
+            const initialStudio = initialWebviews.find((w) => w.kind === "Studio");
+            invariant(initialStudio, "Studio webview not found");
+            logger.info(
+                "Studio tab found in webview %s (%s)",
+                initialStudio.id,
+                initialStudio.label
+            );
+
+            await waitForWebviewKindText(
+                automation,
+                "Studio",
+                ["Studio"],
+                "Studio",
+                60_000
+            );
+        } finally {
+            await automation.close();
+        }
+    }, 300_000);
+
+    const standardDapps = [
+        { name: "Aave V3", texts: ["Aave V3", "Safety notes"] },
+        { name: "Safe Admin", texts: ["Safe Admin", "Load Safe", "Connect Wallet"] }
+    ];
+
+    for (const dapp of standardDapps) {
+        it(`should load the ${dapp.name} app in client`, async () => {
+            const automation = await getClientAutomation();
+            if (!automation) return;
+
+            try {
+                const launched = await launchDappFromLauncher(automation, dapp.name);
+                await waitForWebviewText(
+                    automation,
+                    launched.id,
+                    dapp.texts,
+                    dapp.name
+                );
+            } finally {
+                await automation.close();
+            }
+        }, 300_000);
+    }
+
+    it("should automate client launcher for Uniswap V2 walletconnect flow", async () => {
+        const automation = await getClientAutomation();
+        if (!automation) return;
+
+        try {
+            const launched = await launchDappFromLauncher(automation, "Uniswap V2");
+            await waitForWebviewText(
+                automation,
+                launched.id,
+                ["Uniswap V2", "Connect Wallet"],
+                "Uniswap V2"
+            );
+
+            const walletConnectUri = await automateWalletConnectFlow(automation, launched.id);
+            logger.info(
+                "WalletConnect pairing URI received in wallet selector window (%d chars)",
+                walletConnectUri.length
+            );
+        } finally {
+            await automation.close();
+        }
+    }, 300_000);
 });

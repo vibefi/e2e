@@ -8,6 +8,7 @@ import {
   logSection,
   runCmd,
   runCli,
+  runCliJson,
   parseCliJson,
   copyDirRecursive,
   extractPublishedDappIdFromExecuteReceipt,
@@ -92,7 +93,7 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
 
     logSection(`Package dapp: ${dapp.name}`);
     logger.debug("Running: vibefi package (%s)...", packagePath);
-    const packageResult = await runCli(
+    const packageJson = await runCliJson<{ rootCid?: string }>(
       [
         "package",
         "--path",
@@ -104,12 +105,8 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
         "--description",
         dapp.description,
       ],
+      `package (${dapp.name})`,
       { noRpc: true }
-    );
-    if (packageResult.code !== 0) throw new Error(`package failed for ${dapp.name}`);
-    const packageJson = parseCliJson<{ rootCid?: string }>(
-      packageResult.stdout || "",
-      `package (${dapp.name})`
     );
     if (!packageJson.rootCid)
       throw new Error(`Missing rootCid from package for ${dapp.name}`);

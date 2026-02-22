@@ -1,6 +1,6 @@
 import { loadDevnetJson, type DevnetJson } from "@vibefi/shared";
 import { config } from "./config";
-import { logSection, runCli, parseCliJson } from "./utils";
+import { logSection, runCli, runCliJson, parseCliJson } from "./utils";
 import { expect } from "bun:test";
 import { logger } from "./logger";
 
@@ -12,16 +12,14 @@ export async function verifyRegistry(
 
   logSection("Dapp list");
   logger.debug("Running: vibefi dapp:list...");
-  const result = await runCli(["dapp:list"]);
-  expect(result.code).toBe(0);
-  const dappList = parseCliJson<
+  const dappList = await runCliJson<
     Array<{
       dappId?: string;
       name?: string;
       status?: string;
       rootCid?: string;
     }>
-  >(result.stdout || "", "dapp:list");
+  >(["dapp:list"], "dapp:list");
   logger.info("Found %s dapp(s) in registry.", dappList.length);
   expect(dappList.length).toBeGreaterThanOrEqual(expectedCount);
 
