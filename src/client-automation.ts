@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import { EventEmitter } from "node:events";
-import { logger } from "./logger";
+import { isToolOutputEnabled, logger } from "./logger";
 
 export interface AutomationOptions {
   clientBinary: string;
@@ -58,7 +58,9 @@ export class ClientAutomation extends EventEmitter {
     this.proc = spawn(options.clientBinary, options.args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      stdio: ["pipe", "pipe", "inherit"],
+      // stdout is reserved for the JSON automation protocol. Only surface
+      // client stderr logs when tool output streaming is explicitly enabled.
+      stdio: ["pipe", "pipe", isToolOutputEnabled() ? "inherit" : "ignore"],
     });
 
     this.rl = createInterface({ input: this.proc.stdout! });
@@ -188,6 +190,7 @@ export class ClientAutomation extends EventEmitter {
   }
 
   async close(): Promise<void> {
+    this.rl.close();
     if (this.proc.exitCode !== null) return;
     this.proc.kill("SIGTERM");
     await new Promise<void>((resolve) => {

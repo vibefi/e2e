@@ -1,6 +1,6 @@
 services:
   ipfs:
-    image: ipfs/kubo:v0.28.0
+    image: ipfs/kubo:v0.38.2
     container_name: vibefi-ipfs
     environment:
       - IPFS_PROFILE=server

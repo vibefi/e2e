@@ -7,6 +7,7 @@ import { processes } from "./processes";
 import { logSection, runCmd, runCli, waitFor, ensureContractsDeployed } from "./utils";
 import { expect } from "bun:test";
 import { isToolOutputEnabled, logger } from "./logger";
+import { assertCommandSuccess } from "./assertions";
 
 export async function startInfrastructure() {
   const { useSepolia, chainId, forkUrl, anvilPort, rpcUrl, ipfsApi, contractsDir, devnetJsonPath } = config();
@@ -125,10 +126,10 @@ export async function runSanityChecks() {
   logSection("CLI status");
   logger.debug("Running: vibefi status...");
   let result = await runCli(["status"]);
-  expect(result.code).toBe(0);
+  assertCommandSuccess(result, "vibefi status");
 
   logSection("List proposals");
   logger.debug("Running: vibefi proposals:list...");
   result = await runCli(["proposals:list"]);
-  expect(result.code).toBe(0);
+  assertCommandSuccess(result, "vibefi proposals:list");
 }
