@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { config } from "./config";
 import { invariant, assertCommandSuccess } from "./assertions";
 import { logger } from "./logger";
@@ -7,6 +8,15 @@ import { runCmd, waitFor } from "./utils";
 import { ClientAutomation, type WebviewInfo } from "./client-automation";
 
 let cachedClientBinary: string | null = null;
+let cachedHtml2CanvasSource: string | null = null;
+const html2CanvasInjectedWebviewsByClient = new WeakMap<ClientAutomation, Set<string>>();
+let screenshotRunDir: string | null = null;
+
+interface ScreenshotResult {
+    dataUrl: string;
+    width: number;
+    height: number;
+}
 
 export async function getClientAutomation(): Promise<ClientAutomation | null> {
     const { useClient, monorepoDir, devnetJsonPath } = config();
@@ -191,10 +201,174 @@ export async function waitForWebviewKindText(
     return resolvedWebview;
 }
 
+function getHtml2CanvasSource(): string {
+    if (cachedHtml2CanvasSource) return cachedHtml2CanvasSource;
+    const require = createRequire(import.meta.url);
+    const html2CanvasPath = require.resolve("html2canvas/dist/html2canvas.min.js");
+    cachedHtml2CanvasSource = fs.readFileSync(html2CanvasPath, "utf8");
+    return cachedHtml2CanvasSource;
+}
+
+async function ensureHtml2CanvasInjected(
+    automation: ClientAutomation,
+    webviewId: string
+): Promise<void> {
+    let injectedWebviews = html2CanvasInjectedWebviewsByClient.get(automation);
+    if (!injectedWebviews) {
+        injectedWebviews = new Set<string>();
+        html2CanvasInjectedWebviewsByClient.set(automation, injectedWebviews);
+    }
+
+    if (injectedWebviews.has(webviewId)) {
+        const alreadyInjected = await automation.evalJs(
+            webviewId,
+            "return typeof window.__vibefiHtml2canvas === 'function';"
+        );
+        if (alreadyInjected === true) return;
+        injectedWebviews.delete(webviewId);
+    }
+
+    const source = getHtml2CanvasSource();
+    const injected = await automation.evalJs(
+        webviewId,
+        `if (!window.__vibefiHtml2canvas) {
+             ${source}
+             window.__vibefiHtml2canvas =
+               window.html2canvas ||
+               (typeof html2canvas !== 'undefined' ? html2canvas : undefined);
+         }
+         return typeof window.__vibefiHtml2canvas === 'function';`,
+        30_000
+    );
+    invariant(injected, `Failed to inject html2canvas into webview ${webviewId}`);
+    injectedWebviews.add(webviewId);
+}
+
+async function captureWebviewScreenshotData(
+    automation: ClientAutomation,
+    webviewId: string
+): Promise<ScreenshotResult> {
+    await ensureHtml2CanvasInjected(automation, webviewId);
+    const captureScript = (rootExpr: string) => `
+        const root = ${rootExpr};
+        if (!root) throw new Error('screenshot root not found');
+        const width = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, document.body?.clientWidth || 0);
+        const height = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0, document.body?.clientHeight || 0);
+        const canvas = await window.__vibefiHtml2canvas(root, {
+          backgroundColor: null,
+          scale: 1,
+          useCORS: false,
+          allowTaint: true,
+          logging: false,
+          width,
+          height,
+          windowWidth: width,
+          windowHeight: height,
+          scrollX: 0,
+          scrollY: 0
+        });
+        return {
+          dataUrl: canvas.toDataURL('image/png'),
+          width: canvas.width,
+          height: canvas.height
+        };`;
+
+    let result: unknown;
+    let firstError: unknown;
+    try {
+        result = await automation.evalJs(
+            webviewId,
+            captureScript("document.documentElement"),
+            60_000
+        );
+    } catch (error) {
+        firstError = error;
+        result = await automation.evalJs(
+            webviewId,
+            captureScript("document.body || document.documentElement"),
+            60_000
+        );
+        logger.warn(
+            "Screenshot capture fallback succeeded for webview %s after documentElement failure: %s",
+            webviewId,
+            firstError instanceof Error ? firstError.message : String(firstError)
+        );
+    }
+
+    invariant(
+        typeof result === "object" && result !== null,
+        `Invalid screenshot payload for webview ${webviewId}`
+    );
+    const payload = result as Partial<ScreenshotResult>;
+    invariant(
+        typeof payload.dataUrl === "string" && payload.dataUrl.startsWith("data:image/png;base64,"),
+        `Invalid screenshot dataUrl for webview ${webviewId}`
+    );
+    invariant(
+        typeof payload.width === "number" && typeof payload.height === "number",
+        `Invalid screenshot dimensions for webview ${webviewId}`
+    );
+    return payload as ScreenshotResult;
+}
+
+function sanitizeScreenshotName(name: string): string {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 120) || "screenshot";
+}
+
+function getScreenshotRunDir(): string {
+    if (screenshotRunDir) return screenshotRunDir;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    screenshotRunDir = path.join(
+        config().monorepoDir,
+        "e2e",
+        "artifacts",
+        "screenshots",
+        stamp
+    );
+    fs.mkdirSync(screenshotRunDir, { recursive: true });
+    return screenshotRunDir;
+}
+
+export async function saveWebviewScreenshot(
+    automation: ClientAutomation,
+    webviewId: string,
+    name: string
+): Promise<string | null> {
+    try {
+        const { dataUrl, width, height } = await captureWebviewScreenshotData(
+            automation,
+            webviewId
+        );
+        const base64 = dataUrl.slice("data:image/png;base64,".length);
+        const fileName = `${sanitizeScreenshotName(name)}.png`;
+        const outPath = path.join(getScreenshotRunDir(), fileName);
+        fs.writeFileSync(outPath, Buffer.from(base64, "base64"));
+        logger.info(
+            "Saved screenshot %s (%dx%d)",
+            outPath,
+            width,
+            height
+        );
+        return outPath;
+    } catch (error) {
+        logger.warn(
+            "Screenshot capture failed for %s (%s): %s",
+            name,
+            webviewId,
+            error instanceof Error ? error.message : String(error)
+        );
+        return null;
+    }
+}
+
 export async function automateWalletConnectFlow(
     automation: ClientAutomation,
     launchedId: string
-): Promise<string> {
+): Promise<{ uri: string; walletSelectorId: string }> {
     const webviewsBeforeConnect = await automation.listWebviews();
     const webviewIdsBeforeConnect = new Set(
         webviewsBeforeConnect.map((wv) => wv.id)
@@ -294,5 +468,8 @@ export async function automateWalletConnectFlow(
         "WalletConnect pairing URI was not returned in wallet selector window"
     );
 
-    return walletConnectUri;
+    return {
+        uri: walletConnectUri,
+        walletSelectorId: walletSelector.id,
+    };
 }

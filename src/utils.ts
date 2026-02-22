@@ -55,7 +55,28 @@ export function runCmd(
     }
 
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on("close", (code) => {
+      const result = { code: code ?? 1, stdout, stderr };
+      if (result.code !== 0 && capture && !stream) {
+        logger.warn(
+          "Command failed (exit=%d): %s %s",
+          result.code,
+          command,
+          args.join(" ")
+        );
+        const stdoutTrimmed = stdout.trim();
+        const stderrTrimmed = stderr.trim();
+        if (stdoutTrimmed) {
+          logger.warn("Command stdout:");
+          process.stdout.write(`${stdoutTrimmed}\n`);
+        }
+        if (stderrTrimmed) {
+          logger.warn("Command stderr:");
+          process.stderr.write(`${stderrTrimmed}\n`);
+        }
+      }
+      resolve(result);
+    });
   });
 }
 

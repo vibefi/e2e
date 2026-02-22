@@ -16,11 +16,28 @@ import {
     launchDappFromLauncher,
     waitForWebviewText,
     waitForWebviewKindText,
+    saveWebviewScreenshot,
     automateWalletConnectFlow,
 } from "./client-e2e-helpers";
 
 describe("E2E Test Suite", () => {
     let cleanupDirs: string[] = [];
+
+    async function withClientAutomationTest(
+        fn: (automation: NonNullable<Awaited<ReturnType<typeof getClientAutomation>>>) => Promise<void>
+    ): Promise<void> {
+        const automation = await getClientAutomation();
+        if (!automation) return;
+
+        try {
+            await fn(automation);
+        } catch (error) {
+            automation.dumpToolOutput("client e2e test failure");
+            throw error;
+        } finally {
+            await automation.close();
+        }
+    }
 
     beforeAll(async () => {
         initConfig(process.argv.slice(2));
@@ -77,10 +94,7 @@ describe("E2E Test Suite", () => {
     });
 
     it("should load the Studio tab in client", async () => {
-        const automation = await getClientAutomation();
-        if (!automation) return;
-
-        try {
+        await withClientAutomationTest(async (automation) => {
             const launcher = await waitForLauncherWebview(automation);
             await waitForDappListPopulated(automation, launcher.id);
 
@@ -93,16 +107,15 @@ describe("E2E Test Suite", () => {
                 initialStudio.label
             );
 
-            await waitForWebviewKindText(
+            const studioLoaded = await waitForWebviewKindText(
                 automation,
                 "Studio",
                 ["Studio"],
                 "Studio",
                 60_000
             );
-        } finally {
-            await automation.close();
-        }
+            await saveWebviewScreenshot(automation, studioLoaded.id, "studio-tab-loaded");
+        });
     }, 300_000);
 
     const standardDapps = [
@@ -112,10 +125,7 @@ describe("E2E Test Suite", () => {
 
     for (const dapp of standardDapps) {
         it(`should load the ${dapp.name} app in client`, async () => {
-            const automation = await getClientAutomation();
-            if (!automation) return;
-
-            try {
+            await withClientAutomationTest(async (automation) => {
                 const launched = await launchDappFromLauncher(automation, dapp.name);
                 await waitForWebviewText(
                     automation,
@@ -123,17 +133,17 @@ describe("E2E Test Suite", () => {
                     dapp.texts,
                     dapp.name
                 );
-            } finally {
-                await automation.close();
-            }
+                await saveWebviewScreenshot(
+                    automation,
+                    launched.id,
+                    `${dapp.name}-loaded`
+                );
+            });
         }, 300_000);
     }
 
     it("should automate client launcher for Uniswap V2 walletconnect flow", async () => {
-        const automation = await getClientAutomation();
-        if (!automation) return;
-
-        try {
+        await withClientAutomationTest(async (automation) => {
             const launched = await launchDappFromLauncher(automation, "Uniswap V2");
             await waitForWebviewText(
                 automation,
@@ -142,13 +152,17 @@ describe("E2E Test Suite", () => {
                 "Uniswap V2"
             );
 
-            const walletConnectUri = await automateWalletConnectFlow(automation, launched.id);
+            const { uri: walletConnectUri, walletSelectorId } =
+                await automateWalletConnectFlow(automation, launched.id);
             logger.info(
                 "WalletConnect pairing URI received in wallet selector window (%d chars)",
                 walletConnectUri.length
             );
-        } finally {
-            await automation.close();
-        }
+            await saveWebviewScreenshot(
+                automation,
+                walletSelectorId,
+                "uniswap-walletconnect-uri"
+            );
+        });
     }, 300_000);
 });
