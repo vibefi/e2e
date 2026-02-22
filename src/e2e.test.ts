@@ -183,6 +183,110 @@ describe("E2E Test Suite", () => {
             );
             invariant(domReady, "Uniswap V2 / Connect Wallet not found in launched dapp DOM");
             logger.info("Uniswap V2 DOM content verified (includes Connect Wallet)");
+
+            // Click the dapp's Connect Wallet button and wait for the wallet selector tab
+            const webviewsBeforeConnect = await automation.listWebviews();
+            const webviewIdsBeforeConnect = new Set(
+                webviewsBeforeConnect.map((wv) => wv.id)
+            );
+            const walletSelectorPromise = automation.waitForWebview(
+                (wv) => wv.kind === "WalletSelector",
+                30_000
+            );
+            const clickedConnect = await automation.evalJs(
+                launched.id,
+                `const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                 const connectEl = candidates.find((el) => (el.textContent || '').includes('Connect Wallet'));
+                 if (!connectEl) return false;
+                 connectEl.click();
+                 return true;`
+            );
+            invariant(clickedConnect, "Could not click Connect Wallet button in Uniswap V2 dapp");
+            logger.info("Clicked Connect Wallet in launched dapp");
+
+            const walletSelector = await walletSelectorPromise;
+            invariant(walletSelector.kind === "WalletSelector", "Wallet selector webview did not open");
+            logger.info(
+                "Wallet selector opened in webview %s (%s)",
+                walletSelector.id,
+                walletSelector.label
+            );
+
+            const webviewsAfterConnect = await automation.listWebviews();
+            const spawnedWebviews = webviewsAfterConnect.filter(
+                (wv) => !webviewIdsBeforeConnect.has(wv.id)
+            );
+            invariant(
+                spawnedWebviews.some((wv) => wv.id === walletSelector.id),
+                "Connect Wallet did not spawn a new wallet selector webview"
+            );
+            logger.info(
+                "New webview spawned after Connect Wallet click: %s",
+                walletSelector.id
+            );
+
+            // Wait for wallet selector UI to render, then choose WalletConnect
+            const walletSelectorReady = await waitFor(
+                "wallet selector DOM content",
+                async () => {
+                    try {
+                        const text = await automation.evalJs(
+                            walletSelector.id,
+                            "return document.body?.innerText || ''"
+                        );
+                        return typeof text === "string" &&
+                            text.includes("Connect Wallet") &&
+                            text.includes("WalletConnect");
+                    } catch {
+                        return false;
+                    }
+                },
+                30_000
+            );
+            invariant(walletSelectorReady, "Wallet selector UI did not render");
+            logger.info("Wallet selector UI rendered");
+
+            const clickedWalletConnect = await automation.evalJs(
+                walletSelector.id,
+                `const options = Array.from(document.querySelectorAll('.option.surface-card'));
+                 const wcOption = options.find((el) => (el.textContent || '').includes('WalletConnect'));
+                 if (!wcOption) return false;
+                 wcOption.click();
+                 return true;`
+            );
+            invariant(clickedWalletConnect, "Could not click WalletConnect option");
+            logger.info("Clicked WalletConnect option");
+
+            // WalletConnect pairing URI should be surfaced in the wallet selector window
+            let walletConnectUri = "";
+            const walletConnectUriReady = await waitFor(
+                "WalletConnect pairing URI",
+                async () => {
+                    try {
+                        const uri = await automation.evalJs(
+                            walletSelector.id,
+                            "return document.querySelector('#uri')?.value || ''",
+                            15_000
+                        );
+                        if (typeof uri === "string" && uri.startsWith("wc:")) {
+                            walletConnectUri = uri;
+                            return true;
+                        }
+                        return false;
+                    } catch {
+                        return false;
+                    }
+                },
+                60_000
+            );
+            invariant(
+                walletConnectUriReady,
+                "WalletConnect pairing URI was not returned in wallet selector window"
+            );
+            logger.info(
+                "WalletConnect pairing URI received in wallet selector window (%d chars)",
+                walletConnectUri.length
+            );
         } finally {
             await automation.close();
         }
