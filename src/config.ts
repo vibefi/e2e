@@ -30,6 +30,7 @@ export interface E2eConfig {
   chainId: string;
   useSepolia: boolean;
   useGovAgent: boolean;
+  useClient: boolean;
   verbosity: E2eVerbosity;
   streamToolOutput: boolean;
   publicClient: AnvilClient;
@@ -136,6 +137,7 @@ function buildConfig(argv: string[]): E2eConfig {
 
   const useSepolia = args.includes("--sepolia");
   const useGovAgent = args.includes("--gov-agent");
+  const useClient = args.includes("--client");
   const verbosity = parseVerbosity(args);
   const streamToolOutput =
     args.includes("--tool-output") || args.includes("--show-tool-output");
@@ -175,6 +177,7 @@ function buildConfig(argv: string[]): E2eConfig {
     chainId,
     useSepolia,
     useGovAgent,
+    useClient,
     verbosity,
     streamToolOutput,
     publicClient,
