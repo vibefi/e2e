@@ -95,24 +95,6 @@ export function parseCliJson<T>(stdout: string, context: string): T {
   throw new Error(`${context}: failed to parse JSON output`);
 }
 
-export function pickInstallCommand(baseDir: string): { command: string; args: string[] } | null {
-  const packageJsonPath = path.join(baseDir, "package.json");
-  if (!fs.existsSync(packageJsonPath)) return null;
-  if (fs.existsSync(path.join(baseDir, "bun.lock")) || fs.existsSync(path.join(baseDir, "bun.lockb"))) {
-    return { command: "bun", args: ["install"] };
-  }
-  if (fs.existsSync(path.join(baseDir, "package-lock.json"))) {
-    return { command: "npm", args: ["ci"] };
-  }
-  if (fs.existsSync(path.join(baseDir, "pnpm-lock.yaml"))) {
-    return { command: "pnpm", args: ["install", "--frozen-lockfile"] };
-  }
-  if (fs.existsSync(path.join(baseDir, "yarn.lock"))) {
-    return { command: "yarn", args: ["install", "--frozen-lockfile"] };
-  }
-  return { command: "bun", args: ["install"] };
-}
-
 export function copyDirRecursive(sourceDir: string, destDir: string) {
   fs.mkdirSync(destDir, { recursive: true });
   for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {

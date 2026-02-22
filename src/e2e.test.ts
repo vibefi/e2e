@@ -2,12 +2,11 @@ import "dotenv/config";
 import fs from "node:fs";
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { initConfig, config } from "./config";
-import { prepareDappExamples, startInfrastructure, runSanityChecks } from "./setup";
+import { startInfrastructure, runSanityChecks } from "./setup";
 import { publishAllDapps } from "./dapp-publish";
 import { verifyRegistry } from "./verify";
 import { testGovernanceAgent } from "./gov-agent";
 import { configureLogger, logger } from "./logger";
-import { processes } from "./processes";
 
 describe("E2E Test Suite", () => {
     let cleanupDirs: string[] = [];
@@ -23,8 +22,6 @@ describe("E2E Test Suite", () => {
             streamToolOutput ? "on" : "off"
         );
 
-        // Start background infrastructure
-        await prepareDappExamples();
         await startInfrastructure();
     }, 120000); // 2 minute timeout for infrastructure start
 

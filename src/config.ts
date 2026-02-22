@@ -14,11 +14,6 @@ export interface DappEntry {
   description: string;
 }
 
-export interface InstallTarget {
-  key: string;
-  dir: string;
-}
-
 export interface E2eConfig {
   monorepoDir: string;
   contractsDir: string;
@@ -39,7 +34,6 @@ export interface E2eConfig {
   streamToolOutput: boolean;
   publicClient: AnvilClient;
   dapps: DappEntry[];
-  dappInstallTargets: InstallTarget[];
 }
 
 export type E2eVerbosity = "quiet" | "normal" | "verbose";
@@ -157,13 +151,6 @@ function buildConfig(argv: string[]): E2eConfig {
 
   const publicClient = getPublicClient(rpcUrl) as AnvilClient;
 
-  const dappInstallTargets: InstallTarget[] = [
-    { key: "uniswap-v2", dir: path.join(dappExamplesDir, "uniswap-v2") },
-    { key: "aave-v3", dir: path.join(dappExamplesDir, "aave-v3") },
-    { key: "safe-admin", dir: path.join(dappExamplesDir, "safe-admin") },
-    { key: "zfi", dir: zfiSourceDir },
-  ];
-
   const dapps: DappEntry[] = [
     { key: "studio", dir: studioDir, name: "Studio", description: "VibeFi governance studio" },
     { key: "uniswap-v2", dir: path.join(dappExamplesDir, "uniswap-v2"), name: "Uniswap V2", description: "Uniswap V2 example" },
@@ -192,6 +179,5 @@ function buildConfig(argv: string[]): E2eConfig {
     streamToolOutput,
     publicClient,
     dapps,
-    dappInstallTargets,
   };
 }

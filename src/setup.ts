@@ -4,51 +4,9 @@ import { createWalletClient, http } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { config, publicClient } from "./config";
 import { processes } from "./processes";
-import { logSection, runCmd, runCli, pickInstallCommand, waitFor, ensureContractsDeployed } from "./utils";
+import { logSection, runCmd, runCli, waitFor, ensureContractsDeployed } from "./utils";
 import { expect } from "bun:test";
 import { isToolOutputEnabled, logger } from "./logger";
-
-export async function prepareDappExamples() {
-  const { dappExamplesDir, zfiSourceDir, dappInstallTargets } = config();
-
-  logSection("Prepare dapp examples");
-  logger.debug("Ensuring nested dapp submodules are initialized...");
-  const submoduleResult = await runCmd("git", ["submodule", "update", "--init", "--recursive"], {
-    cwd: dappExamplesDir,
-    capture: true,
-  });
-  if (submoduleResult.code !== 0) {
-    throw new Error("failed to initialize nested submodules under dapp-examples");
-  }
-  if (!fs.existsSync(zfiSourceDir)) {
-    throw new Error(`zFi submodule dapp directory missing: ${zfiSourceDir}`);
-  }
-
-  logSection("Install dapp dependencies");
-  for (const target of dappInstallTargets) {
-    if (!fs.existsSync(target.dir)) {
-      throw new Error(`Missing dapp directory for ${target.key}: ${target.dir}`);
-    }
-    const installCommand = pickInstallCommand(target.dir);
-    if (!installCommand) {
-      logger.debug("[%s] No package.json found, skipping dependency install.", target.key);
-      continue;
-    }
-    logger.debug(
-      "[%s] Installing dependencies via: %s %s",
-      target.key,
-      installCommand.command,
-      installCommand.args.join(" ")
-    );
-    const installResult = await runCmd(installCommand.command, installCommand.args, {
-      cwd: target.dir,
-      capture: true,
-    });
-    if (installResult.code !== 0) {
-      throw new Error(`dependency install failed for ${target.key}`);
-    }
-  }
-}
 
 export async function startInfrastructure() {
   const { useSepolia, chainId, forkUrl, anvilPort, rpcUrl, ipfsApi, contractsDir, devnetJsonPath } = config();

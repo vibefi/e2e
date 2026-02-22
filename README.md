@@ -50,6 +50,5 @@ bun run e2e -- --tool-output
 Notes:
 - This script starts IPFS via docker compose in the background.
 - It starts a devnet via `contracts/script/local-devnet.sh` and leaves Anvil running on the configured port.
-- It initializes nested submodules inside `dapp-examples/` (including `zfi/`).
-- It installs dependencies for dapps that include a `package.json` before packaging.
+- It expects `dapp-examples/` (including `zfi/`) to already be initialized in your checkout.
 - It packages/proposes/executes/fetches `studio`, `uniswap-v2`, `aave-v3`, `safe-admin`, and `zfi`.
