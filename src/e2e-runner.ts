@@ -13,4 +13,13 @@ if (result.error) {
     process.exit(1);
 }
 
-process.exit(result.status ?? 0);
+if (typeof result.status === "number") {
+    process.exit(result.status);
+}
+
+if (result.signal) {
+    console.error(`E2E tests were terminated by signal: ${result.signal}`);
+    process.exit(1);
+}
+
+process.exit(1);

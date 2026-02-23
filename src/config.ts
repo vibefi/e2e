@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import dotenv from "dotenv";
 import { getPublicClient } from "@vibefi/shared";
 
 export type AnvilClient = ReturnType<typeof getPublicClient> & {
@@ -107,8 +108,6 @@ function buildConfig(argv: string[]): E2eConfig {
   // Align environment with contracts/.env where local-devnet.sh sources variables
   const contractsEnvPath = path.join(contractsDir, ".env");
   if (fs.existsSync(contractsEnvPath)) {
-    // We import dotenv dynamically or require it. Since we're using ESM, we can use default dotenv features:
-    const dotenv = require("dotenv");
     dotenv.config({ path: contractsEnvPath });
   }
 

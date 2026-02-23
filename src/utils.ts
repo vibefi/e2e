@@ -29,11 +29,30 @@ export function runCmd(
   );
 
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
+    const startedAt = Date.now();
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       stdio: capture ? ["ignore", "pipe", "pipe"] : stream ? "inherit" : "ignore",
     });
+
+    let slowLogTimer: ReturnType<typeof setTimeout> | null = null;
+    let slowLogInterval: ReturnType<typeof setInterval> | null = null;
+    if (!stream) {
+      const logSlowCommand = () => {
+        const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+        logger.info(
+          "Command still running (%ss): %s %s",
+          elapsedSec,
+          command,
+          args.join(" ")
+        );
+      };
+      slowLogTimer = setTimeout(() => {
+        logSlowCommand();
+        slowLogInterval = setInterval(logSlowCommand, 30_000);
+      }, 10_000);
+    }
 
     let stdout = "";
     let stderr = "";
@@ -54,28 +73,15 @@ export function runCmd(
       });
     }
 
-    child.on("error", reject);
+    child.on("error", (err) => {
+      if (slowLogTimer) clearTimeout(slowLogTimer);
+      if (slowLogInterval) clearInterval(slowLogInterval);
+      reject(err);
+    });
     child.on("close", (code) => {
-      const result = { code: code ?? 1, stdout, stderr };
-      if (result.code !== 0 && capture && !stream) {
-        logger.warn(
-          "Command failed (exit=%d): %s %s",
-          result.code,
-          command,
-          args.join(" ")
-        );
-        const stdoutTrimmed = stdout.trim();
-        const stderrTrimmed = stderr.trim();
-        if (stdoutTrimmed) {
-          logger.warn("Command stdout:");
-          process.stdout.write(`${stdoutTrimmed}\n`);
-        }
-        if (stderrTrimmed) {
-          logger.warn("Command stderr:");
-          process.stderr.write(`${stderrTrimmed}\n`);
-        }
-      }
-      resolve(result);
+      if (slowLogTimer) clearTimeout(slowLogTimer);
+      if (slowLogInterval) clearInterval(slowLogInterval);
+      resolve({ code: code ?? 1, stdout, stderr });
     });
   });
 }

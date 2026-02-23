@@ -35,6 +35,21 @@ Run against Sepolia fork:
 bun run e2e -- --sepolia
 ```
 
+Run client UI automation tests (spawns desktop client):
+```bash
+bun run e2e -- --client
+```
+
+Run governance-agent E2E (requires OpenAI key):
+```bash
+OPENAI_API_KEY=... bun run e2e -- --gov-agent
+```
+
+Run both optional paths:
+```bash
+OPENAI_API_KEY=... bun run e2e -- --client --gov-agent
+```
+
 Control log verbosity:
 ```bash
 bun run e2e -- --quiet
@@ -52,3 +67,5 @@ Notes:
 - It starts a devnet via `contracts/script/local-devnet.sh` and leaves Anvil running on the configured port.
 - It expects `dapp-examples/` (including `zfi/`) to already be initialized in your checkout.
 - It packages/proposes/executes/fetches `studio`, `uniswap-v2`, `aave-v3`, `safe-admin`, and `zfi`.
+- `--client` runs client automation checks against the built desktop app.
+- `--gov-agent` requires `OPENAI_API_KEY` in the environment.

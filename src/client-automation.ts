@@ -62,6 +62,8 @@ export class ClientAutomation extends EventEmitter {
     this.proc = spawn(options.clientBinary, options.args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
+      // stdout is reserved for the JSON automation protocol; keep stderr piped
+      // so we can optionally stream it and buffer it for failure diagnostics.
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -183,6 +185,10 @@ export class ClientAutomation extends EventEmitter {
     await Promise.race([this.readyPromise, timeout]);
   }
 
+  processId(): number | null {
+    return this.proc.pid ?? null;
+  }
+
   private sendCommand(cmd: Record<string, unknown>): string {
     const id = `cmd-${this.nextId++}`;
     const line = JSON.stringify({ id, ...cmd });
@@ -243,6 +249,7 @@ export class ClientAutomation extends EventEmitter {
   }
 
   async close(): Promise<void> {
+    this.rl.close();
     if (this.proc.exitCode !== null) return;
     this.closingRequested = true;
     this.proc.kill("SIGTERM");

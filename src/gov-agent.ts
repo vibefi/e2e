@@ -7,9 +7,12 @@ import { proposeDapp, castVote, queueAndExecute } from "./governance";
 import { logSection, runCmd, runCli, runCliJson, parseCliJson } from "./utils";
 import { expect } from "bun:test";
 import { logger } from "./logger";
+import { assertCommandSuccess } from "./assertions";
 
+// SECURITY: Test-only key from Hardhat/Foundry defaults. Never use in production or with real funds.
 const VOTER1_PRIVATE_KEY =
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+// SECURITY: Test-only keystore password for E2E tests. Never use in production or with real funds.
 const KEYSTORE_PASSWORD = "e2e-test-password";
 
 export async function testGovernanceAgent() {
@@ -49,7 +52,7 @@ export async function testGovernanceAgent() {
       ],
       { capture: true }
     );
-    expect(importResult.code).toBe(0);
+    assertCommandSuccess(importResult, "cast wallet import (gov-agent)");
     const keystorePath = path.join(tmpKeystoreDir, "gov-e2e-voter");
     logger.debug("Keystore created at %s", keystorePath);
 
@@ -142,7 +145,7 @@ export async function testGovernanceAgent() {
         },
       }
     );
-    expect(agentResult.code).toBe(0);
+    assertCommandSuccess(agentResult, "cargo run gov-agent");
     logger.info("Gov-agent completed.");
 
     // --- verify vote was cast ---

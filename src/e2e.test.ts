@@ -7,7 +7,7 @@ import { publishAllDapps } from "./dapp-publish";
 import { verifyRegistry } from "./verify";
 import { testGovernanceAgent } from "./gov-agent";
 import { configureLogger, logger } from "./logger";
-import { invariant } from "./assertions";
+import { assertDefined, invariant } from "./assertions";
 import { waitFor } from "./utils";
 import {
     getClientAutomation,
@@ -69,7 +69,7 @@ describe("E2E Test Suite", () => {
         await runSanityChecks();
     });
 
-    let studioDappId: bigint;
+    let studioDappId: bigint | null = null;
 
     it("should publish all dapps", async () => {
         const result = await publishAllDapps();
@@ -81,6 +81,10 @@ describe("E2E Test Suite", () => {
     });
 
     it("should verify the registry", async () => {
+        assertDefined(
+            studioDappId,
+            "studioDappId not set (publish test may have failed or tests ran out of order)"
+        );
         await verifyRegistry(5, studioDappId);
     });
 
