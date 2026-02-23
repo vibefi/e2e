@@ -163,12 +163,22 @@ export async function waitForWebviewKindText(
                 const target = webviews.find((w) => w.kind === kind);
                 if (!target) return false;
                 matchedWebview = target;
-                const text = await automation.evalJs(
+                const payload = await automation.evalJs(
                     target.id,
-                    "return document.body?.innerText || ''"
+                    "return { title: document.title || '', text: document.body?.innerText || '', readyState: document.readyState || '' }"
                 );
-                return typeof text === "string" &&
-                    expectedTexts.every((needle) => text.includes(needle));
+                const title = typeof (payload as { title?: unknown })?.title === "string"
+                    ? (payload as { title: string }).title
+                    : "";
+                const text = typeof (payload as { text?: unknown })?.text === "string"
+                    ? (payload as { text: string }).text
+                    : "";
+                const readyState = typeof (payload as { readyState?: unknown })?.readyState === "string"
+                    ? (payload as { readyState: string }).readyState
+                    : "";
+                const searchable = `${title}\n${text}`;
+                return readyState === "complete" &&
+                    expectedTexts.every((needle) => searchable.includes(needle));
             } catch {
                 return false;
             }
