@@ -22,6 +22,10 @@ export async function getClientAutomation(): Promise<ClientAutomation | null> {
         const buildResult = await runCmd("cargo", ["build", "--features", "automation"], {
             cwd: clientDir,
             capture: true,
+            env: {
+              // point Helia to local IPFS node
+              VIBEFI_IPFS_HELIA_GATEWAYS: JSON.stringify(["http://127.0.0.1:8080"])
+            }
         });
         assertCommandSuccess(buildResult, "cargo build client");
 
