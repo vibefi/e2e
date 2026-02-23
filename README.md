@@ -7,6 +7,7 @@ Dedicated end-to-end test runner for VibeFi.
 - `bun`
 - `docker` + `docker compose`
 - `forge`/`anvil`/`cast` (Foundry)
+- `cargo` + Rust toolchain (required for `--gov-agent`)
 - Monorepo checked out locally
 
 ## Setup
@@ -19,8 +20,12 @@ cp .env.example .env
 Edit `.env` and set:
 
 - `MONOREPO_DIR` (absolute path to monorepo)
-- `MAINNET_RPC_URL` if you want a mainnet forked anvil
-- `SEPOLIA_RPC_URL` if you want to run `--sepolia`
+- optional `ANVIL_PORT`, `IPFS_API`, `IPFS_GATEWAY`
+
+Optional fork RPCs are read by `contracts/script/local-devnet.sh` from
+`contracts/.env`:
+- `MAINNET_RPC_URL` for default mainnet-fork mode
+- `SEPOLIA_RPC_URL` for `--sepolia`
 
 ## Run
 
@@ -68,4 +73,4 @@ Notes:
 - It expects `dapp-examples/` (including `zfi/`) to already be initialized in your checkout.
 - It packages/proposes/executes/fetches `studio`, `uniswap-v2`, `aave-v3`, `safe-admin`, and `zfi`.
 - `--client` runs client automation checks against the built desktop app.
-- `--gov-agent` requires `OPENAI_API_KEY` in the environment.
+- `--gov-agent` requires `OPENAI_API_KEY` in the environment and runs `cargo run` in `gov-agent/`.
