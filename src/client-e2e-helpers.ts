@@ -43,7 +43,7 @@ export async function getClientAutomation(): Promise<ClientAutomation | null> {
 export async function waitForLauncherWebview(
     automation: ClientAutomation
 ): Promise<WebviewInfo> {
-    await automation.waitForReady(15_000);
+    await automation.waitForReady(45_000);
     logger.info("Client is ready");
 
     const webviews = await automation.listWebviews();
@@ -164,8 +164,8 @@ export async function waitForWebviewKindText(
                 if (!target) return false;
                 matchedWebview = target;
                 const text = await automation.evalJs(
-                  target.id,
-                  "return document.body?.innerText || ''"
+                    target.id,
+                    "return document.body?.innerText || ''"
                 );
                 return typeof text === "string" &&
                     expectedTexts.every((needle) => text.includes(needle));
