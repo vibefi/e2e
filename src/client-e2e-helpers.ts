@@ -159,6 +159,12 @@ export async function waitForWebviewKindText(
     timeoutMs = 60_000
 ): Promise<WebviewInfo> {
     let matchedWebview: WebviewInfo | null = null;
+    let lastSnapshot: {
+        title: string;
+        text: string;
+        readyState: string;
+        url: string;
+    } | null = null;
     const ready = await waitFor(
         `${label} ${kind} webview DOM content`,
         async () => {
@@ -169,7 +175,7 @@ export async function waitForWebviewKindText(
                 matchedWebview = target;
                 const payload = await automation.evalJs(
                     target.id,
-                    "return { title: document.title || '', text: document.body?.innerText || '', readyState: document.readyState || '' }"
+                    "return { title: document.title || '', text: document.body?.innerText || '', readyState: document.readyState || '', url: window.location?.href || '' }"
                 );
                 const title = typeof (payload as { title?: unknown })?.title === "string"
                     ? (payload as { title: string }).title
@@ -180,6 +186,10 @@ export async function waitForWebviewKindText(
                 const readyState = typeof (payload as { readyState?: unknown })?.readyState === "string"
                     ? (payload as { readyState: string }).readyState
                     : "";
+                const url = typeof (payload as { url?: unknown })?.url === "string"
+                    ? (payload as { url: string }).url
+                    : "";
+                lastSnapshot = { title, text, readyState, url };
                 const searchable = `${title}\n${text}`;
                 return readyState === "complete" &&
                     expectedTexts.every((needle) => searchable.includes(needle));
@@ -190,6 +200,43 @@ export async function waitForWebviewKindText(
         timeoutMs
     );
     if (!ready || !matchedWebview) {
+        if (matchedWebview) {
+            try {
+                const diagnostics = await automation.evalJs(
+                    matchedWebview.id,
+                    "return { title: document.title || '', readyState: document.readyState || '', url: window.location?.href || '', textSample: (document.body?.innerText || '').slice(0, 500), hasH1: !!document.querySelector('h1'), hasStudioWord: ((document.body?.innerText || '') + ' ' + (document.title || '')).includes('Studio') }"
+                ) as {
+                    title?: string;
+                    readyState?: string;
+                    url?: string;
+                    textSample?: string;
+                    hasH1?: boolean;
+                    hasStudioWord?: boolean;
+                };
+                logger.warn(
+                    "%s diagnostics (webview=%s): readyState=%s title=%s url=%s hasH1=%s hasStudioWord=%s textSample=%s",
+                    label,
+                    matchedWebview.id,
+                    diagnostics.readyState ?? "",
+                    JSON.stringify(diagnostics.title ?? ""),
+                    diagnostics.url ?? "",
+                    diagnostics.hasH1 ? "true" : "false",
+                    diagnostics.hasStudioWord ? "true" : "false",
+                    JSON.stringify(diagnostics.textSample ?? "")
+                );
+            } catch (error) {
+                logger.warn("%s diagnostics failed for %s webview: %s", label, kind, String(error));
+            }
+        } else if (lastSnapshot) {
+            logger.warn(
+                "%s last snapshot: readyState=%s title=%s url=%s textSample=%s",
+                label,
+                lastSnapshot.readyState,
+                JSON.stringify(lastSnapshot.title),
+                lastSnapshot.url,
+                JSON.stringify(lastSnapshot.text.slice(0, 500))
+            );
+        }
         throw new Error(
             `${label} ${kind} webview DOM missing expected text: ${expectedTexts.join(", ")}`
         );
