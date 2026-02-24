@@ -102,7 +102,7 @@ describe("E2E Test Suite", () => {
                 "Studio",
                 ["Studio"],
                 "Studio",
-                120_000
+                60_000
             );
         } finally {
             await automation.close();
