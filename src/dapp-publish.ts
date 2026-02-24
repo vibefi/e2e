@@ -55,16 +55,18 @@ function createStudioPackagingDir(devnet: DevnetJson): string {
   return tempDir;
 }
 
-async function setStudioDappIdInDevnetJson(studioDappId: bigint) {
+async function updateConfigForE2E(studioDappId: bigint) {
   const { contractsDir, devnetJsonPath } = config();
   const result = await runCmd(
     "bun",
     [
-      path.join(contractsDir, "script", "set-devnet-studio-dapp-id.mjs"),
+      path.join(contractsDir, "script", "updateConfigForE2E.mjs"),
       "--file",
       devnetJsonPath,
       "--studio-dapp-id",
       studioDappId.toString(),
+      "--ipfs-helia-gateway",
+      "http://127.0.0.1:8080",
     ],
     { cwd: contractsDir, capture: true }
   );
@@ -135,10 +137,10 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
       if (maybeStudioDappId === null) {
         throw new Error("Failed to detect Studio dappId from execute receipt");
       }
-      await setStudioDappIdInDevnetJson(maybeStudioDappId);
+      await updateConfigForE2E(maybeStudioDappId);
       studioDappId = maybeStudioDappId;
       logger.info(
-        "Stored studioDappId=%s in %s",
+        "Stored studioDappId=%s and set ipfsHeliaGateway in %s",
         studioDappId.toString(),
         devnetJsonPath
       );

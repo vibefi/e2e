@@ -51,11 +51,24 @@ export async function startInfrastructure() {
 
   const optionalForkingMessage = forkUrl ? ` with fork from ${forkUrl}` : "";
   logger.info("Starting local-devnet.sh%s...", optionalForkingMessage);
-  processes().spawnBackground("./script/local-devnet.sh", [], {
+  const devnetProcess = processes().spawnBackground("./script/local-devnet.sh", [], {
     cwd: contractsDir,
     env: { ...process.env, ANVIL_PORT: anvilPort, CHAIN_ID: chainId, MAINNET_RPC_URL: forkUrl },
     stdio: isToolOutputEnabled() ? "inherit" : "ignore",
     detached: true,
+  });
+  let devnetExited = false;
+  let devnetExitCode: number | null = null;
+  let devnetExitSignal: NodeJS.Signals | null = null;
+  devnetProcess.on("exit", (code, signal) => {
+    devnetExited = true;
+    devnetExitCode = code;
+    devnetExitSignal = signal;
+    logger.warn(
+      "local-devnet.sh exited (code=%s signal=%s)",
+      code ?? "null",
+      signal ?? "null"
+    );
   });
 
   logger.info("Waiting for RPC at %s...", rpcUrl);
@@ -86,19 +99,33 @@ export async function startInfrastructure() {
   const deployStart = Date.now();
   let lastLog = 0;
   while (Date.now() - deployStart < deployTimeout) {
+    if (devnetExited) {
+      throw new Error(
+        `local-devnet.sh exited before contracts were detected (code=${devnetExitCode ?? "null"}, signal=${devnetExitSignal ?? "null"})`
+      );
+    }
     if (await ensureContractsDeployed()) {
       logger.info("Contracts deployed successfully.");
       break;
     }
     const elapsed = Date.now() - deployStart;
-    if (elapsed - lastLog > 5000) {
-      logger.debug("Still waiting for contracts... (%ss elapsed)", Math.round(elapsed / 1000));
+    if (elapsed - lastLog > 10000) {
+      const devnetJsonPresent = fs.existsSync(devnetJsonPath);
+      logger.info(
+        "Still waiting for contracts (%ss elapsed, devnet.json=%s, local-devnet=%s)",
+        Math.round(elapsed / 1000),
+        devnetJsonPresent ? "present" : "missing",
+        devnetExited ? "exited" : "running"
+      );
       lastLog = elapsed;
     }
     await new Promise((r) => setTimeout(r, 500));
   }
   if (!(await ensureContractsDeployed())) {
-    throw new Error("Contracts not deployed after waiting for background devnet.");
+    const devnetJsonPresent = fs.existsSync(devnetJsonPath);
+    throw new Error(
+      `Contracts not deployed after waiting for background devnet (devnet.json=${devnetJsonPresent ? "present" : "missing"}, local-devnet=${devnetExited ? "exited" : "running"})`
+    );
   }
 }
 

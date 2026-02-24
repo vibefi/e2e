@@ -43,7 +43,7 @@ export async function getClientAutomation(): Promise<ClientAutomation | null> {
 export async function waitForLauncherWebview(
     automation: ClientAutomation
 ): Promise<WebviewInfo> {
-    await automation.waitForReady(15_000);
+    await automation.waitForReady(45_000);
     logger.info("Client is ready");
 
     const webviews = await automation.listWebviews();
