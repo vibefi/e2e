@@ -35,7 +35,9 @@ export async function packageAndProposeDapp({
   );
 
   if (!packageJson.rootCid) {
-    throw new Error(`Missing rootCid from package output for ${name}`);
+    throw new Error(
+      `Missing rootCid from package output for ${name} (path: ${packagePath}, context: ${packageContext})`
+    );
   }
 
   const { proposalId } = await proposeDapp({
