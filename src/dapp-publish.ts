@@ -100,7 +100,6 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
       version: "0.0.1",
       description: dapp.description,
       proposalDescription: `E2E proposal ${dapp.name} ${Date.now()}`,
-      packageContext: `package (${dapp.name})`,
     });
 
     // --- vote + queue + execute ---

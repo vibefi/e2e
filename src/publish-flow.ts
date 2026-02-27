@@ -7,7 +7,7 @@ export interface PublishProposalInput {
   version: string;
   description: string;
   proposalDescription: string;
-  packageContext: string;
+  cliContext?: string;
 }
 
 export async function packageAndProposeDapp({
@@ -16,8 +16,9 @@ export async function packageAndProposeDapp({
   version,
   description,
   proposalDescription,
-  packageContext,
+  cliContext,
 }: PublishProposalInput): Promise<{ rootCid: string; proposalId: string }> {
+  const context = cliContext ?? `package (${name})`;
   const packageJson = await runCliJson<{ rootCid?: string }>(
     [
       "package",
@@ -30,13 +31,13 @@ export async function packageAndProposeDapp({
       "--description",
       description,
     ],
-    packageContext,
+    context,
     { noRpc: true }
   );
 
   if (!packageJson.rootCid) {
     throw new Error(
-      `Missing rootCid from package output for ${name} (path: ${packagePath}, context: ${packageContext})`
+      `Missing rootCid from package output for ${name} (path: ${packagePath}, context: ${context})`
     );
   }
 

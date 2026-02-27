@@ -66,7 +66,6 @@ async function main() {
     version: bundle.version,
     description: bundle.description,
     proposalDescription: `Security test proposal ${bundleKey} ${Date.now()}`,
-    packageContext: `package (${bundleKey})`,
   });
 
   logger.info("Created proposal %s for bundle %s", proposalId, bundleKey);
