@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "e2e": "bun run src/e2e-runner.ts",
+    "publish:test-bundle": "bun run src/publish-test-bundle.ts",
     "typecheck": "bun run tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

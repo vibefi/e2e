@@ -50,6 +50,12 @@ Run governance-agent E2E (requires OpenAI key):
 OPENAI_API_KEY=... bun run e2e -- --gov-agent
 ```
 
+Quickly publish a security test bundle proposal (for gov-agent pickup checks):
+```bash
+bun run publish:test-bundle -- --bundle red_team_vapp
+bun run publish:test-bundle -- --bundle malicious_uniswapv2
+```
+
 Run both optional paths:
 ```bash
 OPENAI_API_KEY=... bun run e2e -- --client --gov-agent
