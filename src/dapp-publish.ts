@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { loadDevnetJson, type DevnetJson } from "@vibefi/shared";
 import { config } from "./config";
-import { castVote, queueAndExecute } from "./governance";
-import { packageAndProposeDapp } from "./publish-flow";
+import { castVote, proposeDapp, queueAndExecute } from "./governance";
+import { packageDapp } from "./packaging";
 import {
   logSection,
   runCmd,
@@ -92,10 +92,14 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
       cleanupDirs.push(packagePath);
     }
 
-    logSection(`Package dapp: ${dapp.name}`);
-    logger.debug("Running: vibefi package (%s)...", packagePath);
-    const { rootCid, proposalId } = await packageAndProposeDapp({
+    const { rootCid } = await packageDapp({
       packagePath,
+      name: dapp.name,
+      version: "0.0.1",
+      description: dapp.description,
+    });
+    const { proposalId } = await proposeDapp({
+      rootCid,
       name: dapp.name,
       version: "0.0.1",
       description: dapp.description,

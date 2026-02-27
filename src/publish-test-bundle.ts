@@ -3,7 +3,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { initConfig, config } from "./config";
 import { configureLogger, logger } from "./logger";
-import { packageAndProposeDapp } from "./publish-flow";
+import { proposeDapp } from "./governance";
+import { packageDapp } from "./packaging";
 import { ensureContractsDeployed, logSection } from "./utils";
 import { startInfrastructure } from "./setup";
 
@@ -59,9 +60,17 @@ async function main() {
     logger.info("Contracts already deployed. Reusing running infrastructure.");
   }
 
-  logSection("Package bundle");
-  const { proposalId, rootCid } = await packageAndProposeDapp({
+  const { rootCid } = await packageDapp({
     packagePath: bundleDir,
+    name: bundle.name,
+    version: bundle.version,
+    description: bundle.description,
+    cliContext: `package (${bundleKey})`,
+  });
+
+  logSection("Propose bundle");
+  const { proposalId } = await proposeDapp({
+    rootCid,
     name: bundle.name,
     version: bundle.version,
     description: bundle.description,
