@@ -51,7 +51,7 @@ async function main() {
   logSection(`Publish test bundle: ${bundleKey}`);
   logger.info("Bundle path: %s", bundleDir);
 
-  const deployed = await ensureContractsDeployed();
+  const deployed = await detectDeployedContracts();
   if (!deployed) {
     logger.info("Contracts not detected. Starting infrastructure...");
     await startInfrastructure();
@@ -77,7 +77,9 @@ async function main() {
   );
 
   if (!packageJson.rootCid) {
-    throw new Error(`missing rootCid from package output for ${bundleKey}`);
+    throw new Error(
+      `Missing rootCid from package output for publish-test-bundle (${bundleKey})`
+    );
   }
 
   logSection("Propose bundle");
@@ -121,12 +123,27 @@ function parseBundleArg(args: string[]): SupportedBundle {
 
 function readArgValue(args: string[], flag: string): string | null {
   const idx = args.indexOf(flag);
-  if (idx !== -1 && idx + 1 < args.length) {
+  if (idx !== -1) {
+    if (idx + 1 >= args.length || args[idx + 1].startsWith("-")) {
+      throw new Error(`Missing value for ${flag} argument`);
+    }
     return args[idx + 1];
   }
   const prefix = `${flag}=`;
   const inline = args.find((arg) => arg.startsWith(prefix));
   return inline ? inline.slice(prefix.length) : null;
+}
+
+async function detectDeployedContracts(): Promise<boolean> {
+  try {
+    return await ensureContractsDeployed();
+  } catch (err) {
+    logger.warn(
+      "Could not determine deployment state (%s). Will start infrastructure.",
+      err instanceof Error ? err.message : String(err)
+    );
+    return false;
+  }
 }
 
 main().catch((err) => {
