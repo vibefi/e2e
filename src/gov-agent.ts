@@ -181,7 +181,7 @@ export async function testGovernanceAgent() {
 
     const stateRaw = fs.readFileSync(stateFilePath, "utf-8");
     type StoredProposal = {
-      review?: { score?: number; llm_summary?: string | null };
+      review?: { score?: number; llm_score?: number | null };
       decision?: { vote?: string };
       vote_execution?: { submitted?: boolean; tx_hash?: string | null } | null;
     };
@@ -197,14 +197,17 @@ export async function testGovernanceAgent() {
     expect(entry).toBeDefined();
 
     expect(entry.review?.score).toBeDefined();
+    expect(entry.review?.llm_score).toBeDefined();
+    expect(entry.review?.llm_score).not.toBeNull();
+    expect(entry.review?.llm_score).toBeGreaterThanOrEqual(0);
+    expect(entry.review?.llm_score).toBeLessThanOrEqual(1);
     expect(entry.decision?.vote).toBeDefined();
     expect(entry.vote_execution?.submitted).toBe(true);
     expect(entry.vote_execution?.tx_hash).toBeDefined();
-    expect(entry.review?.llm_summary).toBeDefined();
-    expect(entry.review?.llm_summary).not.toBeNull();
     logger.info(
-      "State file verified: score=%s vote=%s tx=%s",
+      "State file verified: score=%s llm_score=%s vote=%s tx=%s",
       entry.review!.score,
+      entry.review!.llm_score,
       entry.decision!.vote,
       entry.vote_execution!.tx_hash
     );
