@@ -4,7 +4,8 @@ import fs from "node:fs";
 import { initConfig, config } from "./config";
 import { configureLogger, logger } from "./logger";
 import { proposeDapp } from "./governance";
-import { ensureContractsDeployed, logSection, runCliJson } from "./utils";
+import { packageDapp } from "./packaging";
+import { ensureContractsDeployed, logSection } from "./utils";
 import { startInfrastructure } from "./setup";
 
 type SupportedBundle = "red_team_vapp" | "malicious_uniswapv2";
@@ -59,32 +60,17 @@ async function main() {
     logger.info("Contracts already deployed. Reusing running infrastructure.");
   }
 
-  logSection("Package bundle");
-  const packageJson = await runCliJson<{ rootCid?: string }>(
-    [
-      "package",
-      "--path",
-      bundleDir,
-      "--name",
-      bundle.name,
-      "--dapp-version",
-      bundle.version,
-      "--description",
-      bundle.description,
-    ],
-    `package (${bundleKey})`,
-    { noRpc: true }
-  );
-
-  if (!packageJson.rootCid) {
-    throw new Error(
-      `Missing rootCid from package output for publish-test-bundle (${bundleKey})`
-    );
-  }
+  const { rootCid } = await packageDapp({
+    packagePath: bundleDir,
+    name: bundle.name,
+    version: bundle.version,
+    description: bundle.description,
+    cliContext: `package (${bundleKey})`,
+  });
 
   logSection("Propose bundle");
   const { proposalId } = await proposeDapp({
-    rootCid: packageJson.rootCid,
+    rootCid,
     name: bundle.name,
     version: bundle.version,
     description: bundle.description,
@@ -92,7 +78,7 @@ async function main() {
   });
 
   logger.info("Created proposal %s for bundle %s", proposalId, bundleKey);
-  logger.info("Root CID: %s", packageJson.rootCid);
+  logger.info("Root CID: %s", rootCid);
 
   // Keep output machine-friendly for quick copy into other tools.
   console.log(
@@ -100,7 +86,7 @@ async function main() {
       {
         bundle: bundleKey,
         proposalId,
-        rootCid: packageJson.rootCid,
+        rootCid,
       },
       null,
       2

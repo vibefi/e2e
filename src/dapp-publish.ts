@@ -3,13 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { loadDevnetJson, type DevnetJson } from "@vibefi/shared";
 import { config } from "./config";
-import { proposeDapp, castVote, queueAndExecute } from "./governance";
+import { castVote, proposeDapp, queueAndExecute } from "./governance";
+import { packageDapp } from "./packaging";
 import {
   logSection,
   runCmd,
   runCli,
-  runCliJson,
-  parseCliJson,
   copyDirRecursive,
   extractPublishedDappIdFromExecuteReceipt,
 } from "./utils";
@@ -93,35 +92,21 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
       cleanupDirs.push(packagePath);
     }
 
-    logSection(`Package dapp: ${dapp.name}`);
-    logger.debug("Running: vibefi package (%s)...", packagePath);
-    const packageJson = await runCliJson<{ rootCid?: string }>(
-      [
-        "package",
-        "--path",
-        packagePath,
-        "--name",
-        dapp.name,
-        "--dapp-version",
-        "0.0.1",
-        "--description",
-        dapp.description,
-      ],
-      `package (${dapp.name})`,
-      { noRpc: true }
-    );
-    if (!packageJson.rootCid)
-      throw new Error(`Missing rootCid from package for ${dapp.name}`);
-
-    // --- propose + vote + queue + execute ---
+    const { rootCid } = await packageDapp({
+      packagePath,
+      name: dapp.name,
+      version: "0.0.1",
+      description: dapp.description,
+    });
     const { proposalId } = await proposeDapp({
-      rootCid: packageJson.rootCid,
+      rootCid,
       name: dapp.name,
       version: "0.0.1",
       description: dapp.description,
       proposalDescription: `E2E proposal ${dapp.name} ${Date.now()}`,
     });
 
+    // --- vote + queue + execute ---
     logSection(`Cast vote: ${dapp.name}`);
     await castVote(proposalId);
 
@@ -132,7 +117,7 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
       const maybeStudioDappId = extractPublishedDappIdFromExecuteReceipt(
         executeReceipt,
         devnet.dappRegistry,
-        packageJson.rootCid
+        rootCid
       );
       if (maybeStudioDappId === null) {
         throw new Error("Failed to detect Studio dappId from execute receipt");
@@ -148,14 +133,14 @@ export async function publishAllDapps(): Promise<{ studioDappId: bigint; cleanup
 
     // --- fetch bundle ---
     logSection(`Fetch dapp bundle: ${dapp.name}`);
-    logger.debug("Running: vibefi dapp:fetch --root-cid %s...", packageJson.rootCid);
+    logger.debug("Running: vibefi dapp:fetch --root-cid %s...", rootCid);
     const fetchResult = await runCli(
       [
         "dapp:fetch",
         "--root-cid",
-        packageJson.rootCid,
+        rootCid,
         "--out",
-        path.join(cliDir, ".vibefi", "cache", packageJson.rootCid),
+        path.join(cliDir, ".vibefi", "cache", rootCid),
         "--ipfs-api",
         ipfsApi,
         "--ipfs-gateway",
