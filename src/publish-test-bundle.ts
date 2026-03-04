@@ -95,29 +95,22 @@ async function main() {
 }
 
 function parseBundleArg(args: string[]): SupportedBundle {
-  const byFlag = readArgValue(args, "--bundle");
-  const candidate = byFlag ?? "red_team_vapp";
+  if (args.length !== 1 || args[0].startsWith("-")) {
+    throw new Error(
+      `Invalid usage. Expected: bun run publish:test-bundle <bundle>. Valid bundles: ${Object.keys(
+        BUNDLES
+      ).join(", ")}`
+    );
+  }
 
-  if (candidate === "red_team_vapp" || candidate === "malicious_uniswapv2") {
-    return candidate;
+  const candidate = args[0];
+  if (candidate in BUNDLES) {
+    return candidate as SupportedBundle;
   }
 
   throw new Error(
-    `invalid --bundle value "${candidate}". Expected one of: red_team_vapp, malicious_uniswapv2`
+    `Invalid bundle "${candidate}". Valid bundles: ${Object.keys(BUNDLES).join(", ")}`
   );
-}
-
-function readArgValue(args: string[], flag: string): string | null {
-  const idx = args.indexOf(flag);
-  if (idx !== -1) {
-    if (idx + 1 >= args.length || args[idx + 1].startsWith("-")) {
-      throw new Error(`Missing value for ${flag} argument`);
-    }
-    return args[idx + 1];
-  }
-  const prefix = `${flag}=`;
-  const inline = args.find((arg) => arg.startsWith(prefix));
-  return inline ? inline.slice(prefix.length) : null;
 }
 
 async function detectDeployedContracts(): Promise<boolean> {
