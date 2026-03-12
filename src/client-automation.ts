@@ -152,6 +152,25 @@ export class ClientAutomation extends EventEmitter {
     });
   }
 
+  evalJsNoResult(
+    target: string,
+    js: string,
+    timeoutMs = 10_000
+  ): Promise<void> {
+    const id = this.sendCommand({ type: "eval_no_result", target, js });
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`evalJsNoResult timeout (${id})`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: () => resolve(),
+        reject,
+        timer,
+      });
+    });
+  }
+
   listWebviews(timeoutMs = 5_000): Promise<WebviewInfo[]> {
     const id = this.sendCommand({ type: "list_webviews" });
     return new Promise<WebviewInfo[]>((resolve, reject) => {

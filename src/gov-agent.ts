@@ -15,6 +15,106 @@ const VOTER1_PRIVATE_KEY =
 // SECURITY: Test-only keystore password for E2E tests. Never use in production or with real funds.
 const KEYSTORE_PASSWORD = "e2e-test-password";
 
+export async function runGovAgentAutoVoteForProposal(opts: {
+  proposalId: string;
+  fromBlock: bigint;
+}) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error(
+      "OPENAI_API_KEY is required for --gov-agent. Set it in your environment."
+    );
+  }
+
+  const { monorepoDir, anvilPort, devnetJsonPath } = config();
+  const tmpKeystoreDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "vibefi-gov-keystore-")
+  );
+  const tmpDataDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "vibefi-gov-data-")
+  );
+  const govAgentDir = path.join(monorepoDir, "gov-agent");
+
+  try {
+    logSection(`Gov-agent vote for proposal #${opts.proposalId}`);
+    const importResult = await runCmd(
+      "cast",
+      [
+        "wallet",
+        "import",
+        "gov-e2e-voter",
+        "--private-key",
+        VOTER1_PRIVATE_KEY,
+        "--unsafe-password",
+        KEYSTORE_PASSWORD,
+        "--keystore-dir",
+        tmpKeystoreDir,
+      ],
+      { capture: true }
+    );
+    assertCommandSuccess(importResult, "cast wallet import (gov-agent vote)");
+    const keystorePath = path.join(tmpKeystoreDir, "gov-e2e-voter");
+
+    const preVoteStatus = await runCliJson<{
+      forVotes?: string;
+      againstVotes?: string;
+      abstainVotes?: string;
+    }>(["vote:status", opts.proposalId], "vote:status (pre gov-agent vote)");
+
+    const agentResult = await runCmd(
+      "cargo",
+      [
+        "run",
+        "--",
+        "run",
+        "--once",
+        "--auto-vote",
+        "--rpc-url",
+        `ws://127.0.0.1:${anvilPort}`,
+      ],
+      {
+        cwd: govAgentDir,
+        capture: true,
+        env: {
+          GOV_AGENT_FROM_BLOCK: opts.fromBlock.toString(),
+          GOV_AGENT_DEVNET_JSON: devnetJsonPath,
+          GOV_AGENT_KEYSTORE_PATH: keystorePath,
+          GOV_AGENT_KEYSTORE_PASSWORD: KEYSTORE_PASSWORD,
+          GOV_AGENT_DATA_DIR: tmpDataDir,
+          GOV_AGENT_DECISION_PROFILE: "balanced",
+          GOV_AGENT_MIN_VOTE_BLOCKS_REMAINING: "1",
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
+        },
+      }
+    );
+    assertCommandSuccess(agentResult, "cargo run gov-agent (auto-vote)");
+
+    const postVoteStatus = await runCliJson<{
+      forVotes?: string;
+      againstVotes?: string;
+      abstainVotes?: string;
+    }>(["vote:status", opts.proposalId], "vote:status (post gov-agent vote)");
+
+    const preTotal =
+      BigInt(preVoteStatus.forVotes ?? "0") +
+      BigInt(preVoteStatus.againstVotes ?? "0") +
+      BigInt(preVoteStatus.abstainVotes ?? "0");
+    const postTotal =
+      BigInt(postVoteStatus.forVotes ?? "0") +
+      BigInt(postVoteStatus.againstVotes ?? "0") +
+      BigInt(postVoteStatus.abstainVotes ?? "0");
+    expect(postTotal).toBeGreaterThan(preTotal);
+    logger.info(
+      "Gov-agent cast vote on proposal #%s (total votes %s -> %s)",
+      opts.proposalId,
+      preTotal.toString(),
+      postTotal.toString()
+    );
+  } finally {
+    fs.rmSync(tmpKeystoreDir, { recursive: true, force: true });
+    fs.rmSync(tmpDataDir, { recursive: true, force: true });
+  }
+}
+
 export async function testGovernanceAgent() {
   logSection("Governance agent test");
 
