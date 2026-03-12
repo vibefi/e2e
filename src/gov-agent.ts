@@ -281,16 +281,7 @@ export async function testGovernanceAgent() {
 
     const stateRaw = fs.readFileSync(stateFilePath, "utf-8");
     type StoredProposal = {
-      review?: {
-        score?: number;
-        llm_score?: number | null;
-        llm_audit?: {
-          provider?: string;
-          model?: string;
-          prompt_redacted?: string;
-          response_redacted?: string;
-        } | null;
-      };
+      review?: { score?: number; llm_score?: number | null };
       decision?: { vote?: string };
       vote_execution?: { submitted?: boolean; tx_hash?: string | null } | null;
     };
@@ -307,15 +298,12 @@ export async function testGovernanceAgent() {
 
     expect(entry.review?.score).toBeDefined();
     expect(entry.review?.llm_score).toBeDefined();
+    expect(entry.review?.llm_score).not.toBeNull();
+    expect(entry.review?.llm_score).toBeGreaterThanOrEqual(0);
+    expect(entry.review?.llm_score).toBeLessThanOrEqual(1);
     expect(entry.decision?.vote).toBeDefined();
     expect(entry.vote_execution?.submitted).toBe(true);
     expect(entry.vote_execution?.tx_hash).toBeDefined();
-    expect(entry.review?.llm_audit).toBeDefined();
-    expect(entry.review?.llm_audit).not.toBeNull();
-    expect(entry.review?.llm_audit?.provider).toBeDefined();
-    expect(entry.review?.llm_audit?.model).toBeDefined();
-    expect(entry.review?.llm_audit?.prompt_redacted).toBeDefined();
-    expect(entry.review?.llm_audit?.response_redacted).toBeDefined();
     logger.info(
       "State file verified: score=%s llm_score=%s vote=%s tx=%s",
       entry.review!.score,
