@@ -22,6 +22,10 @@ export interface CodeProposeResult {
     rootCid: string;
 }
 
+// SECURITY: Test-only key from Hardhat/Foundry defaults. Never use in production or with real funds.
+const LOCAL_SIGNER_PRIVATE_KEY =
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
 let cachedClientBinary: string | null = null;
 
 export async function getClientAutomation(): Promise<ClientAutomation | null> {
@@ -740,7 +744,7 @@ export async function connectWalletViaLocalSigner(
                          HTMLInputElement.prototype,
                          'value'
                        )?.set;
-                       const nextValue = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+                       const nextValue = ${JSON.stringify(LOCAL_SIGNER_PRIVATE_KEY)};
                        nativeSetter?.call(input, '');
                        input.dispatchEvent(new Event('input', { bubbles: true }));
                        for (const ch of nextValue) {

@@ -8,8 +8,7 @@ import { verifyRegistry } from "./verify";
 import { runGovAgentAutoVoteForProposal, testGovernanceAgent } from "./gov-agent";
 import { configureLogger, logger } from "./logger";
 import { assertDefined, invariant } from "./assertions";
-import { waitFor } from "./utils";
-import { decodeRootCid, runCliJson } from "./utils";
+import { waitFor, decodeRootCid, runCliJson } from "./utils";
 import { castVote, queueAndExecute } from "./governance";
 import {
     getClientAutomation,
