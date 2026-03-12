@@ -33,15 +33,71 @@ export async function proposeDapp(opts: {
   if (!proposeJson.txHash)
     throw new Error(`Missing txHash from dapp:propose for ${opts.name}`);
 
-  logSection(`Mine block: ${opts.name}`);
+  const { proposalId, receipt } = await waitForProposalIdFromTxHash(
+    proposeJson.txHash,
+    opts.name
+  );
+
+  return { proposalId, receipt };
+}
+
+export async function proposeUpgradeDapp(opts: {
+  dappId: string | bigint;
+  rootCid: string;
+  name: string;
+  version: string;
+  description: string;
+  proposalDescription: string;
+}) {
+  const dappId =
+    typeof opts.dappId === "bigint" ? opts.dappId.toString() : opts.dappId.trim();
+  if (!dappId) throw new Error("dappId is required for dapp:upgrade");
+
+  logSection(`Propose upgrade: ${opts.name}`);
+  logger.debug(
+    "Running: vibefi dapp:upgrade (dappId=%s rootCid=%s)...",
+    dappId,
+    opts.rootCid
+  );
+  const proposeJson = await runCliJson<{ txHash?: string }>([
+    "dapp:upgrade",
+    "--dapp-id",
+    dappId,
+    "--root-cid",
+    opts.rootCid,
+    "--name",
+    opts.name,
+    "--dapp-version",
+    opts.version,
+    "--description",
+    opts.description,
+    "--proposal-description",
+    opts.proposalDescription,
+  ], `dapp:upgrade (${opts.name})`);
+  if (!proposeJson.txHash) {
+    throw new Error(`Missing txHash from dapp:upgrade for ${opts.name}`);
+  }
+
+  const { proposalId, receipt } = await waitForProposalIdFromTxHash(
+    proposeJson.txHash,
+    `${opts.name} upgrade`
+  );
+  return { proposalId, receipt };
+}
+
+async function waitForProposalIdFromTxHash(
+  txHash: string,
+  label: string
+): Promise<{ proposalId: string; receipt: Awaited<ReturnType<ReturnType<typeof publicClient>["waitForTransactionReceipt"]>> }> {
+  logSection(`Mine block: ${label}`);
   logger.debug("Mining 1 block...");
   await publicClient().request({ method: "anvil_mine", params: [1] });
   logger.debug("Block mined.");
 
-  logSection(`Fetch proposal id: ${opts.name}`);
-  logger.debug("Waiting for tx receipt: %s...", proposeJson.txHash);
+  logSection(`Fetch proposal id: ${label}`);
+  logger.debug("Waiting for tx receipt: %s...", txHash);
   const receipt = await publicClient().waitForTransactionReceipt({
-    hash: proposeJson.txHash as Hex,
+    hash: txHash as Hex,
     timeout: 15000,
   });
   logger.debug("Receipt received.");
@@ -51,8 +107,9 @@ export async function proposeDapp(opts: {
   const proposalLog = (receipt.logs ?? []).find(
     (log) => log.address.toLowerCase() === governorAddress
   );
-  if (!proposalLog)
-    throw new Error(`ProposalCreated log not found in receipt for ${opts.name}`);
+  if (!proposalLog) {
+    throw new Error(`ProposalCreated log not found in receipt for ${label}`);
+  }
   const decoded = decodeEventLog({
     abi: governorAbi,
     data: proposalLog.data as Hex,

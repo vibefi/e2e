@@ -45,6 +45,7 @@ function createStudioPackagingDir(devnet: DevnetJson): string {
   };
   vibefiJson.addresses = {
     [String(devnet.chainId)]: {
+      deployBlock: devnet.deployBlock,
       vfiToken: devnet.vfiToken,
       vfiGovernor: devnet.vfiGovernor,
       dappRegistry: devnet.dappRegistry,
