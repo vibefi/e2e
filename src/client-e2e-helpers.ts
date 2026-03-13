@@ -391,6 +391,10 @@ export async function launchDappFromLauncher(
 ): Promise<WebviewInfo> {
     const launcher = await waitForLauncherWebview(automation);
     await waitForDappListPopulated(automation, launcher.id);
+    const webviewsBeforeLaunch = await automation.listWebviews();
+    const webviewIdsBeforeLaunch = new Set(
+        webviewsBeforeLaunch.map((wv) => wv.id)
+    );
 
     const selected = await automation.evalJs(
         launcher.id,
@@ -406,16 +410,17 @@ export async function launchDappFromLauncher(
     invariant(selected, `Could not find ${dappName} in dapp list`);
     logger.info("Selected %s", dappName);
 
+    const launchedPromise = automation.waitForWebview(
+        (wv) => wv.kind === "Standard" && !webviewIdsBeforeLaunch.has(wv.id),
+        60_000
+    );
     await automation.evalJs(
         launcher.id,
         `document.querySelector('button.primary').click(); return true;`
     );
     logger.info("Clicked launch for %s", dappName);
 
-    const launched = await automation.waitForWebview(
-        (wv) => wv.kind === "Standard",
-        60_000
-    );
+    const launched = await launchedPromise;
     logger.info(
         "Dapp launched in webview %s (%s)",
         launched.id,
